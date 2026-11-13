@@ -1,0 +1,28 @@
+{
+  "id": 1002,
+  "tag_name": "v1.2.1-docs",
+  "name": "Release 1.2.1 - Documentation and Schemas",
+  "body": "Updated route dispatch schemas and training documentation.",
+  "draft": false,
+  "prerelease": false,
+  "published_at": "2026-11-11T09:00:00Z",
+  "html_url": "https://github.com/LogarTraders/cold-drink-distribution-app/releases/tag/v1.2.1-docs",
+  "tarball_url": "https://api.github.com/repos/LogarTraders/cold-drink-distribution-app/tarball/v1.2.1-docs",
+  "zipball_url": "https://api.github.com/repos/LogarTraders/cold-drink-distribution-app/zipball/v1.2.1-docs",
+  "assets": [
+    {
+      "id": 502,
+      "name": "agency-manual.pdf",
+      "content_type": "application/pdf",
+      "size": 1540000,
+      "browser_download_url": "https://github.com/LogarTraders/cold-drink-distribution-app/releases/download/v1.2.1-docs/agency-manual.pdf"
+    },
+    {
+      "id": 503,
+      "name": "source-code.zip",
+      "content_type": "application/zip",
+      "size": 3400000,
+      "browser_download_url": "https://github.com/LogarTraders/cold-drink-distribution-app/releases/download/v1.2.1-docs/source-code.zip"
+    }
+  ]
+}

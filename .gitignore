@@ -1,0 +1,20 @@
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Tauri / Rust
+src-tauri/target/
+src-tauri/gen/
+
+# SQLite databases & temp data
+*.db
+*.db-wal
+*.db-shm
+data/
+backups/
+
+# Logs & Editor
+*.log
+.vscode/
+.idea/

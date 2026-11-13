@@ -1,0 +1,20 @@
+{
+  "id": 1003,
+  "tag_name": "v1.1.5",
+  "name": "Release 1.1.5 - Maintenance Update",
+  "body": "General performance updates, UI tweaks, and memory optimization across warehouse inventory modules.",
+  "draft": false,
+  "prerelease": false,
+  "published_at": "2026-10-28T16:00:00Z",
+  "html_url": "https://github.com/LogarTraders/cold-drink-distribution-app/releases/tag/v1.1.5",
+  "assets": [
+    {
+      "id": 504,
+      "name": "cold-drink-agency-v1.1.5.apk",
+      "content_type": "application/vnd.android.package-archive",
+      "size": 24150000,
+      "download_count": 92,
+      "browser_download_url": "https://github.com/LogarTraders/cold-drink-distribution-app/releases/download/v1.1.5/cold-drink-agency-v1.1.5.apk"
+    }
+  ]
+}

@@ -1,0 +1,3 @@
+# Cargo config for Logar Traders POS
+[target.x86_64-pc-windows-gnu]
+rustflags = ["-C", "link-arg=C:\\Users\\AFZALA~1\\AppData\\Local\\Temp\\manifest.o"]

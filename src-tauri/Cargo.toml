@@ -1,0 +1,66 @@
+[package]
+name = "logar-pos-backend"
+version = "1.0.0"
+description = "Logar Traders POS & Distribution Management Desktop Engine"
+authors = ["Logar Traders Engineering"]
+edition = "2021"
+default-run = "logar-pos-backend"
+
+[lib]
+name = "logar_pos_lib"
+crate-type = ["lib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# Tauri v2 Core Desktop Framework
+tauri = { version = "2", features = [] }
+tauri-plugin-shell = "2"
+
+# SQLite Embedded Engine with WAL & Backup API
+rusqlite = { version = "0.32", features = ["bundled", "backup", "chrono", "serde_json"] }
+
+# Connection Pooling
+r2d2 = "0.8"
+r2d2_sqlite = "0.25"
+
+# Serialization & Deserialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Time & Date Management
+chrono = { version = "0.4", features = ["serde"] }
+
+# Robust Error Handling
+thiserror = "2.0"
+
+# Synchronization Primitives
+parking_lot = "0.12"
+
+# Standard OS AppData Path Resolution
+directories = "5.0"
+
+# Hashing & File Integrity Verification
+sha2 = "0.10"
+hex = "0.4"
+uuid = { version = "1", features = ["v4"] }
+
+# Logging Framework
+log = "0.4"
+env_logger = "0.11"
+
+# Temporary File Handling (for atomic file replacement and test fixtures)
+tempfile = "3"
+
+[profile.dev]
+incremental = true
+opt-level = 0
+debug = true
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = true
