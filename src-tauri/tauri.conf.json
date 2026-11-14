@@ -1,18 +1,18 @@
 {
   "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-cli/schema.json",
-  "productName": "Logar Traders POS",
+  "productName": "Next Cola Agency POS",
   "version": "1.0.0",
-  "identifier": "com.logartraders.pos",
+  "identifier": "com.nextcola.agency.pos",
   "build": {
-    "beforeDevCommand": "npm.cmd run dev",
+    "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:5173",
-    "beforeBuildCommand": "npm.cmd run build",
+    "beforeBuildCommand": "npm run build",
     "frontendDist": "../dist"
   },
   "app": {
     "windows": [
       {
-        "title": "Logar Traders — POS & Beverage Distribution Management",
+        "title": "Next Cola Distribution Agency POS & Inventory Management",
         "width": 1366,
         "height": 820,
         "minWidth": 1024,
@@ -27,7 +27,22 @@
     }
   },
   "bundle": {
-    "active": false,
-    "targets": "all"
+    "active": true,
+    "targets": ["nsis", "msi"],
+    "publisher": "Next Cola Agency",
+    "shortDescription": "Cold Drink Distribution Agency Management POS",
+    "longDescription": "Next Cola & Beverage Distribution Agency POS and Inventory Management System.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    }
   }
 }
