@@ -8,6 +8,7 @@ import { AppConfig, getAppConfig } from '../config/appConfig';
 import { GitHubAssetRaw, GitHubReleaseRaw } from '../types/github';
 import {
   ApkAssetInfo,
+  DesktopAssetInfo,
   GitHubApiError,
   RateLimitInfo,
   ReleaseInfo,
@@ -185,6 +186,26 @@ export function parseRateLimitHeaders(headers: Headers): RateLimitInfo | null {
 }
 
 /**
+ * Selects the primary Windows desktop executable (.exe) from a release.
+ */
+export function selectPrimaryExe(
+  assets: GitHubAssetRaw[]
+): GitHubAssetRaw | null {
+  if (!Array.isArray(assets) || assets.length === 0) return null;
+  const valid = assets.filter(
+    (a) => a && typeof a.name === 'string' && a.name.trim().toLowerCase().endsWith('.exe')
+  );
+  if (valid.length === 0) {
+    const msi = assets.filter(
+      (a) => a && typeof a.name === 'string' && a.name.trim().toLowerCase().endsWith('.msi')
+    );
+    return msi.length > 0 ? msi[0] : null;
+  }
+  const setupMatch = valid.find((a) => /setup/i.test(a.name));
+  return setupMatch || valid[0];
+}
+
+/**
  * Transforms a raw GitHub release into a normalized ReleaseInfo domain object.
  */
 export function transformRawRelease(
@@ -215,6 +236,29 @@ export function transformRawRelease(
     };
   }
 
+  const selectedExe = selectPrimaryExe(raw.assets || []);
+  let exeAsset: DesktopAssetInfo | null = null;
+  if (selectedExe) {
+    const rawUrl = typeof selectedExe.browser_download_url === 'string'
+      ? selectedExe.browser_download_url
+      : '';
+    const downloadUrl = rawUrl.startsWith('https://')
+      ? rawUrl
+      : rawUrl
+      ? `https://${rawUrl.replace(/^http:\/\//, '')}`
+      : (raw.html_url || '');
+
+    exeAsset = {
+      id: selectedExe.id,
+      filename: selectedExe.name,
+      sizeBytes: selectedExe.size,
+      formattedSize: formatFileSize(selectedExe.size),
+      downloadUrl,
+      downloadCount: selectedExe.download_count || 0,
+      updatedAt: selectedExe.updated_at,
+    };
+  }
+
   const dateToUse = raw.published_at || raw.created_at;
 
   return {
@@ -228,6 +272,7 @@ export function transformRawRelease(
     githubReleaseUrl: raw.html_url || '',
     isPrerelease: !!raw.prerelease,
     apkAsset,
+    exeAsset,
     sha256Checksum: extractSha256Checksum(raw.body || ''),
     compatibility: extractAndroidCompatibility(raw.body || ''),
   };

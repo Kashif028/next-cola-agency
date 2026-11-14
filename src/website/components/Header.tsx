@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Menu, X, Download, RefreshCw, Smartphone } from 'lucide-react';
+import { Menu, X, Download, RefreshCw, Smartphone, LayoutDashboard } from 'lucide-react';
 import { ReleaseInfo } from '../types/website';
 
 export interface HeaderProps {
@@ -110,6 +110,14 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Desktop CTA */}
         <div className="hidden md:flex items-center space-x-3">
+          <a
+            href="?app=pos#pos"
+            className="inline-flex items-center px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-slate-100 text-xs font-semibold rounded-lg border border-slate-700 transition"
+            title="Launch Web POS Terminal"
+          >
+            <LayoutDashboard className="w-3.5 h-3.5 mr-1.5 text-cyan-400" />
+            <span>Web POS</span>
+          </a>
           {renderCta(false)}
         </div>
 

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Download, BookOpen, RefreshCw, AlertTriangle, ExternalLink } from 'lucide-react';
+import { Download, BookOpen, RefreshCw, AlertTriangle, ExternalLink, Monitor, LayoutDashboard } from 'lucide-react';
 import { ReleaseInfo, EmptyReleaseReason, GitHubApiError } from '../types/website';
 
 export interface HeroProps {
@@ -116,6 +116,33 @@ export const Hero: React.FC<HeroProps> = ({
             View Installation Guide
           </a>
         </div>
+
+        {/* Multi-Platform Availability: Windows PC & Online POS */}
+        {status === 'success' && (
+          <div className="mt-6 pt-6 border-t border-slate-200/80 max-w-2xl mx-auto flex flex-col sm:flex-row items-center justify-center gap-3">
+            <a
+              href={
+                latestRelease?.exeAsset?.downloadUrl ||
+                'https://github.com/Kashif028/next-cola-agency/releases/latest/download/Next_Cola_Agency_POS_1.0.0_x64-setup.exe'
+              }
+              download
+              className="w-full sm:w-auto inline-flex items-center justify-center px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-sm font-semibold rounded-xl shadow transition"
+              data-testid="hero-pc-download-btn"
+            >
+              <Monitor className="w-4 h-4 mr-2 text-cyan-400" />
+              <span>Download for PC (Windows Setup .exe)</span>
+            </a>
+
+            <a
+              href="?app=pos#pos"
+              className="w-full sm:w-auto inline-flex items-center justify-center px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-xl shadow transition"
+              data-testid="hero-web-pos-btn"
+            >
+              <LayoutDashboard className="w-4 h-4 mr-2" />
+              <span>Launch Online Web POS</span>
+            </a>
+          </div>
+        )}
       </div>
     </section>
   );

@@ -38,6 +38,16 @@ export interface CompatibilityInfo {
   packageName: string | null;        // e.g. "com.nextcola.distribution" or null
 }
 
+export interface DesktopAssetInfo {
+  id: number;
+  filename: string;
+  sizeBytes: number;
+  formattedSize: string; // e.g. "65.2 MB"
+  downloadUrl: string; // validated HTTPS download link
+  downloadCount: number;
+  updatedAt: string;
+}
+
 export interface ReleaseInfo {
   id: number;
   versionTag: string; // e.g. "v1.2.0"
@@ -49,6 +59,7 @@ export interface ReleaseInfo {
   githubReleaseUrl: string;
   isPrerelease: boolean;
   apkAsset: ApkAssetInfo | null;
+  exeAsset?: DesktopAssetInfo | null;
   sha256Checksum: string | null; // Genuine extracted hex checksum or null ("Not provided")
   compatibility: CompatibilityInfo;
 }
