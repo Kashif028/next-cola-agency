@@ -5,9 +5,10 @@ import { AgencyProfileTab } from "./AgencyProfileTab";
 import { OperationalParametersTab } from "./OperationalParametersTab";
 import { DatabaseBackupRestoreTab } from "./DatabaseBackupRestoreTab";
 import { AuditTrailViewerTab } from "./AuditTrailViewerTab";
-import { Building2, Sliders, Database, ShieldCheck, Settings } from "lucide-react";
+import { ProductManagementTab } from "./ProductManagementTab";
+import { Building2, Sliders, Database, ShieldCheck, Settings, GlassWater } from "lucide-react";
 
-export type SettingsTabId = "agency" | "operational" | "database" | "audit";
+export type SettingsTabId = "agency" | "products" | "operational" | "database" | "audit";
 
 export const SettingsDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<SettingsTabId>("agency");
@@ -73,6 +74,18 @@ export const SettingsDashboard: React.FC = () => {
         </button>
 
         <button
+          onClick={() => setActiveTab("products")}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition whitespace-nowrap ${
+            activeTab === "products"
+              ? "bg-red-600 text-white shadow-sm"
+              : "bg-white text-slate-600 hover:bg-slate-50 border border-slate-200"
+          }`}
+        >
+          <GlassWater className="w-4 h-4" />
+          <span>Product Catalog & PET Packs</span>
+        </button>
+
+        <button
           onClick={() => setActiveTab("operational")}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition whitespace-nowrap ${
             activeTab === "operational"
@@ -120,6 +133,7 @@ export const SettingsDashboard: React.FC = () => {
             {activeTab === "agency" && (
               <AgencyProfileTab settings={settings} onSettingsUpdated={handleSettingsUpdated} />
             )}
+            {activeTab === "products" && <ProductManagementTab />}
             {activeTab === "operational" && (
               <OperationalParametersTab settings={settings} onSettingsUpdated={handleSettingsUpdated} />
             )}

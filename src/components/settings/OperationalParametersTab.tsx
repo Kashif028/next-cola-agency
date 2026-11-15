@@ -13,7 +13,7 @@ export const OperationalParametersTab: React.FC<OperationalParametersTabProps> =
   onSettingsUpdated,
 }) => {
   const [formData, setFormData] = useState<UpdateAppSettingsDto>({
-    agency_name: "Logar Traders",
+    agency_name: "Dogar Traders",
     tagline: "",
     address: "",
     phone: "",
@@ -36,7 +36,7 @@ export const OperationalParametersTab: React.FC<OperationalParametersTabProps> =
   useEffect(() => {
     if (settings) {
       setFormData({
-        agency_name: settings.agency_name || "Logar Traders",
+        agency_name: settings.agency_name || "Dogar Traders",
         tagline: settings.tagline || "",
         address: settings.address || "",
         phone: settings.phone || "",

@@ -53,7 +53,7 @@ export function GatePassPrintModal() {
           <div className="bg-white text-slate-950 font-mono text-xs leading-relaxed p-6 rounded-lg shadow-xl border border-slate-200 w-[380px]">
             {/* Header */}
             <div className="text-center space-y-1 pb-3 border-b border-dashed border-slate-400">
-              <div className="font-bold text-sm tracking-wider uppercase">LOGAR TRADERS — NEXTCO LOGISTICS</div>
+              <div className="font-bold text-sm tracking-wider uppercase">DOGAR TRADERS — BEVERAGES DISTRIBUTION</div>
               <div className="text-[11px] font-sans font-bold text-slate-700">
                 لوگر ٹریڈرز — ڈسٹری بیوشن لاجسٹکس ایجنسی
               </div>
@@ -175,7 +175,7 @@ export function GatePassPrintModal() {
             )}
 
             <div className="text-center pt-4 text-[9px] text-slate-500 font-sans">
-              Logar Traders ERP • Tamper-resistant delivery manifest
+              Dogar Traders ERP • Tamper-resistant delivery manifest
             </div>
           </div>
         </div>

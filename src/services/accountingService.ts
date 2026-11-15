@@ -176,8 +176,8 @@ export const accountingService = {
           },
         ],
         formatted_thermal_receipt: `================================================
-          LOGAR TRADERS - NEXTCO DEPOT          
-   لوگر ٹریڈرز — بااختیار ڈسٹری بیوٹرز نیکسٹ کو  
+              DOGAR TRADERS               
+         ڈوگر ٹریڈرز — بیوریج ڈسٹری بیوٹرز
 ================================================
 UDHAAR RECOVERY RECEIPT (WASOOLI RASEED)
 وصولی رسید برائے ادھار

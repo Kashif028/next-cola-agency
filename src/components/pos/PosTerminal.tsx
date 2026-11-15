@@ -15,6 +15,7 @@ import {
   Coins,
 } from "lucide-react";
 import { formatPkr } from "../../types/domain";
+import { loadSavedProducts } from "../../types/products";
 import { PurchaseEntryModal } from "./PurchaseEntryModal";
 import { DailyClosingModal } from "./DailyClosingModal";
 import { SplitPaymentModal } from "./SplitPaymentModal";
@@ -245,11 +246,11 @@ export const PosTerminal: React.FC = () => {
             id: idx + 1,
             sku: s.sku_code,
             name: s.name,
-            brand: s.brand || "Nextco",
-            packName: s.pack_unit_name || "Crate",
-            unitsPerPack: s.units_per_pack || 24,
-            wholesalePackPricePaisa: s.wholesale_price_pack_paisa || 216000,
-            retailPackPricePaisa: s.retail_price_pack_paisa || 240000,
+            brand: s.brand || "Dogar",
+            packName: s.pack_unit_name || "Pack",
+            unitsPerPack: s.units_per_pack || 6,
+            wholesalePackPricePaisa: s.wholesale_price_pack_paisa || 108000,
+            retailPackPricePaisa: s.retail_price_pack_paisa || 120000,
             requiresCrate:
               s.requires_crate ??
               (s.packaging_type === "RGB_GLASS" ||
@@ -258,9 +259,28 @@ export const PosTerminal: React.FC = () => {
             stockBaseUnits: s.current_stock_base_units || 1000,
           }));
           setCatalogItems(mapped);
+          return;
         }
       } catch {
-        // Retain default catalog
+        // Fallback to local products store
+      }
+
+      // Default from saved Dogar Traders PET & Juices products store
+      const savedProds = loadSavedProducts();
+      if (savedProds && savedProds.length > 0) {
+        const mappedFromSaved: CatalogProduct[] = savedProds.map((p) => ({
+          id: p.id,
+          sku: p.sku,
+          name: `${p.name} ${p.sizeLabel}`,
+          brand: p.category.includes("Juice") ? "Juice" : "Dogar Traders",
+          packName: p.requiresCrate ? "Crate" : "Pack",
+          unitsPerPack: p.bottlesPerPack,
+          wholesalePackPricePaisa: p.wholesalePackPricePaisa,
+          retailPackPricePaisa: p.retailPackPricePaisa,
+          requiresCrate: p.requiresCrate,
+          stockBaseUnits: p.stockPacks * p.bottlesPerPack,
+        }));
+        setCatalogItems(mappedFromSaved);
       }
     };
     loadStock();
@@ -655,7 +675,6 @@ export const PosTerminal: React.FC = () => {
             {filteredProducts.map((p) => {
               const isWholesale = selectedCustomer.priceTier === "WHOLESALE";
               const packPrice = isWholesale ? p.wholesalePackPricePaisa : p.retailPackPricePaisa;
-              const unitPrice = Math.floor(packPrice / p.unitsPerPack);
 
               return (
                 <button
@@ -679,10 +698,10 @@ export const PosTerminal: React.FC = () => {
 
                   <div className="mt-3 pt-2 border-t border-slate-700/60 flex items-center justify-between text-xs">
                     <span className="font-mono font-bold text-emerald-400">
-                      {formatPkr(packPrice)}
+                      {formatPkr(packPrice)} <span className="text-[10px] text-slate-400 font-normal">/pack</span>
                     </span>
-                    <span className="text-[10px] text-slate-400 font-mono">
-                      ₨ {(unitPrice / 100).toFixed(0)}/btl
+                    <span className="text-[10px] text-cyan-400 font-mono">
+                      {Math.floor(p.stockBaseUnits / (p.unitsPerPack || 1))} packs left
                     </span>
                   </div>
                 </button>

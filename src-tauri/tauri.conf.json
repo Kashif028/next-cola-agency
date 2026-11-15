@@ -1,8 +1,8 @@
 {
   "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-cli/schema.json",
-  "productName": "Next Cola Agency POS",
+  "productName": "Dogar Traders POS",
   "version": "1.0.0",
-  "identifier": "com.nextcola.agency.pos",
+  "identifier": "com.dogartraders.pos",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:5173",
@@ -10,9 +10,10 @@
     "frontendDist": "../dist"
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
-        "title": "Next Cola Distribution Agency POS & Inventory Management",
+        "title": "DOGAR TRADERS — POS & Beverage Distribution Management",
         "width": 1366,
         "height": 820,
         "minWidth": 1024,
@@ -29,9 +30,9 @@
   "bundle": {
     "active": true,
     "targets": ["nsis", "msi"],
-    "publisher": "Next Cola Agency",
-    "shortDescription": "Cold Drink Distribution Agency Management POS",
-    "longDescription": "Next Cola & Beverage Distribution Agency POS and Inventory Management System.",
+    "publisher": "Dogar Traders",
+    "shortDescription": "Dogar Traders Cold Drink Distribution Management POS",
+    "longDescription": "Dogar Traders Beverage Distribution Agency POS and Inventory Management System.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

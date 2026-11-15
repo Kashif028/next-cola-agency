@@ -2,46 +2,36 @@ import React, { useState } from "react";
 import { useSalesStore } from "../../store/useSalesStore";
 import { X, Truck, Calculator, CheckCircle2, AlertCircle } from "lucide-react";
 import { RecordPurchaseDto, PurchaseItemInputDto } from "../../types/sales";
-
-interface ProductOption {
-  id: number;
-  name: string;
-  sku: string;
-  unitsPerPack: number;
-  defaultCostPaisa: number;
-}
-
-const SAMPLE_PRODUCTS: ProductOption[] = [
-  { id: 1, name: "Next Cola 250ml Glass Bottle", sku: "NC-250-RGB", unitsPerPack: 24, defaultCostPaisa: 180000 },
-  { id: 2, name: "Next Cola 1.5L PET Bottle", sku: "NC-1.5-PET", unitsPerPack: 6, defaultCostPaisa: 90000 },
-  { id: 3, name: "Next Cola 500ml PET Bottle", sku: "NC-500-PET", unitsPerPack: 12, defaultCostPaisa: 108000 },
-  { id: 4, name: "Next Cola 250ml Sleek Can", sku: "NC-250-CAN", unitsPerPack: 24, defaultCostPaisa: 216000 },
-  { id: 5, name: "Fizz Up Lemon 250ml Glass Bottle", sku: "FZ-250-RGB", unitsPerPack: 24, defaultCostPaisa: 180000 },
-  { id: 6, name: "Fizz Up Lemon 1.5L PET Bottle", sku: "FZ-1.5-PET", unitsPerPack: 6, defaultCostPaisa: 90000 },
-  { id: 7, name: "Next Orange 250ml Glass Bottle", sku: "NO-250-RGB", unitsPerPack: 24, defaultCostPaisa: 180000 },
-  { id: 8, name: "Next Pure Mineral Water 500ml", sku: "NW-500-PET", unitsPerPack: 24, defaultCostPaisa: 72000 },
-  { id: 9, name: "Next Pure Mineral Water 1.5L", sku: "NW-1.5-PET", unitsPerPack: 6, defaultCostPaisa: 45000 },
-];
+import { loadSavedProducts } from "../../types/products";
 
 export const PurchaseEntryModal: React.FC = () => {
   const { isPurchaseModalOpen, closePurchaseModal, submitPurchase, previewLandedCost, landedCostPreview, isLoading, error } =
     useSalesStore();
 
+  const availableProducts = loadSavedProducts();
+
   const [supplierId] = useState(1);
   const [invoiceNo, setInvoiceNo] = useState("");
   const [purchaseDate, setPurchaseDate] = useState(new Date().toISOString().slice(0, 10));
-  const [freightPaisa, setFreightPaisa] = useState(1500000); // Rs 15,000
-  const [unloadingPaisa, setUnloadingPaisa] = useState(350000); // Rs 3,500
-  const [transitTaxPaisa, setTransitTaxPaisa] = useState(120000); // Rs 1,200
+  const [freightPaisa, setFreightPaisa] = useState(0);
+  const [unloadingPaisa, setUnloadingPaisa] = useState(0);
+  const [transitTaxPaisa, setTransitTaxPaisa] = useState(0);
   const [paidPaisa, setPaidPaisa] = useState(0);
-  const [cratesReturned, setCratesReturned] = useState(50);
+  const [cratesReturned, setCratesReturned] = useState(0);
   const [notes, setNotes] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
 
-  const [items, setItems] = useState<PurchaseItemInputDto[]>([
-    { product_id: 1, pack_qty: 100, loose_qty: 0, unit_cost_paisa: 180000 },
-    { product_id: 2, pack_qty: 50, loose_qty: 0, unit_cost_paisa: 90000 },
-  ]);
+  const [items, setItems] = useState<PurchaseItemInputDto[]>(() => {
+    const first = availableProducts[0];
+    return [
+      {
+        product_id: first ? first.id : 1,
+        pack_qty: 0,
+        loose_qty: 0,
+        unit_cost_paisa: first ? first.purchasePackPricePaisa : 0,
+      },
+    ];
+  });
 
   if (!isPurchaseModalOpen) return null;
 
@@ -51,7 +41,16 @@ export const PurchaseEntryModal: React.FC = () => {
   };
 
   const handleAddItem = () => {
-    setItems([...items, { product_id: 3, pack_qty: 10, loose_qty: 0, unit_cost_paisa: 108000 }]);
+    const first = availableProducts[0];
+    setItems([
+      ...items,
+      {
+        product_id: first ? first.id : 1,
+        pack_qty: 0,
+        loose_qty: 0,
+        unit_cost_paisa: first ? first.purchasePackPricePaisa : 0,
+      },
+    ]);
   };
 
   const handleRemoveItem = (index: number) => {
@@ -184,8 +183,9 @@ export const PurchaseEntryModal: React.FC = () => {
                 </thead>
                 <tbody className="divide-y divide-slate-800 font-mono">
                   {items.map((it, idx) => {
-                    const prod = SAMPLE_PRODUCTS.find((p) => p.id === it.product_id) || SAMPLE_PRODUCTS[0];
-                    const baseRate = prod.unitsPerPack > 0 ? it.unit_cost_paisa / prod.unitsPerPack : 0;
+                    const prod = availableProducts.find((p) => p.id === it.product_id) || availableProducts[0];
+                    const packUnits = prod?.bottlesPerPack || 1;
+                    const baseRate = packUnits > 0 ? it.unit_cost_paisa / packUnits : 0;
                     const lineBase = it.pack_qty * it.unit_cost_paisa + it.loose_qty * baseRate;
 
                     return (
@@ -194,17 +194,17 @@ export const PurchaseEntryModal: React.FC = () => {
                           <select
                             value={it.product_id}
                             onChange={(e) => {
-                              const chosen = SAMPLE_PRODUCTS.find((p) => p.id === Number(e.target.value));
+                              const chosen = availableProducts.find((p) => p.id === Number(e.target.value));
                               handleUpdateItem(idx, "product_id", Number(e.target.value));
                               if (chosen) {
-                                handleUpdateItem(idx, "unit_cost_paisa", chosen.defaultCostPaisa);
+                                handleUpdateItem(idx, "unit_cost_paisa", chosen.purchasePackPricePaisa);
                               }
                             }}
                             className="bg-slate-800 border border-slate-700 rounded p-1.5 text-white w-full text-xs font-sans"
                           >
-                            {SAMPLE_PRODUCTS.map((p) => (
+                            {availableProducts.map((p) => (
                               <option key={p.id} value={p.id}>
-                                {p.name} ({p.sku})
+                                {p.name} {p.sizeLabel} ({p.sku})
                               </option>
                             ))}
                           </select>

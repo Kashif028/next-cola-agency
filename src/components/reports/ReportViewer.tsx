@@ -54,7 +54,7 @@ export function ReportViewer() {
       {/* Hidden container for Clean Print Output */}
       <div id="report-print-container" className="hidden print:block font-sans text-xs text-black p-4">
         <div className="text-center pb-3 border-b border-black mb-4 space-y-1">
-          <h1 className="text-lg font-bold">LOGAR TRADERS — NEXTCO LOGISTICS AGENCY</h1>
+          <h1 className="text-lg font-bold">DOGAR TRADERS — BEVERAGES DISTRIBUTION AGENCY</h1>
           <p className="text-xs">Nextco Beverage Depot, Main Bypass, Rahim Yar Khan | Ph: +92 300 1234567</p>
           <h2 className="text-sm font-bold pt-1 uppercase">
             {activeReport.id}: {activeReport.name}

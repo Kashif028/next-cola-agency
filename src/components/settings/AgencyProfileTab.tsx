@@ -20,7 +20,7 @@ export const AgencyProfileTab: React.FC<AgencyProfileTabProps> = ({ settings, on
     default_crate_deposit: 15000,
     default_credit_days: 14,
     auto_backup_on_close: true,
-    backup_dir: "C:\\ProgramData\\LogarPOS\\backups",
+    backup_dir: "C:\\ProgramData\\DogarTradersPOS\\backups",
   });
 
   const [saving, setSaving] = useState(false);

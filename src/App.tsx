@@ -18,6 +18,7 @@ import {
   BarChart3,
   Settings,
   Download,
+  BookOpen,
 } from "lucide-react";
 
 import { StockOverview } from "./components/inventory/StockOverview";
@@ -28,6 +29,7 @@ import { PosTerminal } from "./components/pos/PosTerminal";
 import { LogisticsDashboard } from "./components/logistics/LogisticsDashboard";
 import { ReportsHub } from "./components/reports/ReportsHub";
 import { SettingsDashboard } from "./components/settings/SettingsDashboard";
+import { KhataManagement } from "./components/khata/KhataManagement";
 
 type TabKey =
   | "pos"
@@ -38,7 +40,8 @@ type TabKey =
   | "packaging"
   | "crates"
   | "breakage"
-  | "dashboard";
+  | "dashboard"
+  | "khata";
 
 type AppMode = "website" | "pos";
 
@@ -105,7 +108,7 @@ export default function App() {
           </div>
           <div>
             <h1 className="text-xl font-bold tracking-tight text-white">
-              {settings?.agency_name || "Logar Traders — Nextco Logistics Agency"}
+              {settings?.agency_name || "DOGAR TRADERS — Beverage Distribution Agency"}
             </h1>
             <p className="text-xs text-slate-400">
               Beverage Distribution POS & Inventory Management System (PKR ₨)
@@ -164,6 +167,19 @@ export default function App() {
         >
           <ShoppingCart className="w-4 h-4" />
           <span>POS Checkout Counter</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab("khata")}
+          className={`flex items-center space-x-2 px-3.5 py-2 rounded-lg font-semibold transition ${
+            activeTab === "khata"
+              ? "bg-amber-600 text-white shadow"
+              : "text-slate-300 hover:bg-slate-700/60 hover:text-white"
+          }`}
+        >
+          <BookOpen className="w-4 h-4" />
+          <span>Khata Ledger (کھاتہ)</span>
         </button>
 
         <button
@@ -282,6 +298,7 @@ export default function App() {
 
         {/* Tab Routing */}
         {activeTab === "pos" && <PosTerminal />}
+        {activeTab === "khata" && <KhataManagement />}
         {activeTab === "logistics" && <LogisticsDashboard />}
         {activeTab === "reports" && <ReportsHub />}
         {activeTab === "settings" && <SettingsDashboard />}
@@ -394,7 +411,7 @@ export default function App() {
 
       {/* Footer Status Bar */}
       <footer className="bg-slate-950 border-t border-slate-800 px-6 py-2 flex items-center justify-between text-xs text-slate-400 font-mono">
-        <div>Logar Traders POS Engine v1.0.0 | Offline-First Desktop</div>
+        <div>DOGAR TRADERS POS Engine v1.0.0 | Offline-First Desktop</div>
         <div>Tauri v2 + Rust + React + SQLite WAL</div>
       </footer>
     </div>

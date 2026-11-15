@@ -79,9 +79,9 @@ export const dbService = {
     } catch {
       return {
         id: 1,
-        agency_name: "Logar Traders",
+        agency_name: "Dogar Traders",
         tagline: "Authorized Distributor - Next Cola & Beverages",
-        address: "Near General Bus Stand, Circular Road, Logar Distt",
+        address: "Near General Bus Stand, Circular Road, Dogar",
         phone: "+92 300 1234567",
         whatsapp: "+92 300 1234567",
         ntn_strn: "STRN-3277874-9 / NTN-1234567-8",
