@@ -1,176 +1,54 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useSalesStore, CustomerSummary } from "../../store/useSalesStore";
-import { inventoryService } from "../../services/inventoryService";
 import {
   ShoppingCart,
   Search,
-  Trash2,
   Receipt,
-  AlertTriangle,
-  Lock,
-  CreditCard,
-  Truck,
-  RotateCcw,
-  Banknote,
+  Plus,
   Coins,
+  Truck,
+  DollarSign,
+  TrendingUp,
 } from "lucide-react";
-import { formatPkr } from "../../types/domain";
-import { loadSavedProducts } from "../../types/products";
-import { PurchaseEntryModal } from "./PurchaseEntryModal";
-import { DailyClosingModal } from "./DailyClosingModal";
-import { SplitPaymentModal } from "./SplitPaymentModal";
-import { WasooliRaseedModal } from "./WasooliRaseedModal";
+import { loadSavedProducts, ProductItem } from "../../types/products";
+import { loadSavedTruckExpenses } from "../../types/truckExpense";
+import { AddFlavorModal } from "./AddFlavorModal";
 import { ThermalReceiptModal } from "./ThermalReceiptModal";
-
-interface CatalogProduct {
-  id: number;
-  sku: string;
-  name: string;
-  brand: string;
-  packName: string;
-  unitsPerPack: number;
-  wholesalePackPricePaisa: number;
-  retailPackPricePaisa: number;
-  requiresCrate: boolean;
-  stockBaseUnits: number;
-}
-
-const DEFAULT_CATALOG: CatalogProduct[] = [
-  {
-    id: 1,
-    sku: "NC-250-RGB",
-    name: "Next Cola 250ml Glass Bottle",
-    brand: "Next Cola",
-    packName: "Crate",
-    unitsPerPack: 24,
-    wholesalePackPricePaisa: 216000,
-    retailPackPricePaisa: 240000,
-    requiresCrate: true,
-    stockBaseUnits: 12000,
-  },
-  {
-    id: 2,
-    sku: "NC-1.5-PET",
-    name: "Next Cola 1.5L PET Bottle",
-    brand: "Next Cola",
-    packName: "Pack",
-    unitsPerPack: 6,
-    wholesalePackPricePaisa: 105000,
-    retailPackPricePaisa: 120000,
-    requiresCrate: false,
-    stockBaseUnits: 3000,
-  },
-  {
-    id: 3,
-    sku: "NC-500-PET",
-    name: "Next Cola 500ml PET Bottle",
-    brand: "Next Cola",
-    packName: "Pack",
-    unitsPerPack: 12,
-    wholesalePackPricePaisa: 126000,
-    retailPackPricePaisa: 144000,
-    requiresCrate: false,
-    stockBaseUnits: 6000,
-  },
-  {
-    id: 4,
-    sku: "NC-250-CAN",
-    name: "Next Cola 250ml Sleek Can",
-    brand: "Next Cola",
-    packName: "Tray",
-    unitsPerPack: 24,
-    wholesalePackPricePaisa: 240000,
-    retailPackPricePaisa: 264000,
-    requiresCrate: false,
-    stockBaseUnits: 2400,
-  },
-  {
-    id: 5,
-    sku: "FZ-250-RGB",
-    name: "Fizz Up Lemon 250ml Glass Bottle",
-    brand: "Fizz Up",
-    packName: "Crate",
-    unitsPerPack: 24,
-    wholesalePackPricePaisa: 216000,
-    retailPackPricePaisa: 240000,
-    requiresCrate: true,
-    stockBaseUnits: 7200,
-  },
-  {
-    id: 6,
-    sku: "FZ-1.5-PET",
-    name: "Fizz Up Lemon 1.5L PET Bottle",
-    brand: "Fizz Up",
-    packName: "Pack",
-    unitsPerPack: 6,
-    wholesalePackPricePaisa: 105000,
-    retailPackPricePaisa: 120000,
-    requiresCrate: false,
-    stockBaseUnits: 1800,
-  },
-  {
-    id: 7,
-    sku: "NO-250-RGB",
-    name: "Next Orange 250ml Glass Bottle",
-    brand: "Next Orange",
-    packName: "Crate",
-    unitsPerPack: 24,
-    wholesalePackPricePaisa: 216000,
-    retailPackPricePaisa: 240000,
-    requiresCrate: true,
-    stockBaseUnits: 4800,
-  },
-  {
-    id: 8,
-    sku: "NW-500-PET",
-    name: "Next Pure Mineral Water 500ml",
-    brand: "Next Pure",
-    packName: "Pack",
-    unitsPerPack: 24,
-    wholesalePackPricePaisa: 96000,
-    retailPackPricePaisa: 120000,
-    requiresCrate: false,
-    stockBaseUnits: 4800,
-  },
-  {
-    id: 9,
-    sku: "NW-1.5-PET",
-    name: "Next Pure Mineral Water 1.5L",
-    brand: "Next Pure",
-    packName: "Pack",
-    unitsPerPack: 6,
-    wholesalePackPricePaisa: 60000,
-    retailPackPricePaisa: 72000,
-    requiresCrate: false,
-    stockBaseUnits: 2400,
-  },
-];
 
 const CUSTOMER_OPTIONS: CustomerSummary[] = [
   {
     id: 1,
-    name: "Muhammad Akram",
-    shopName: "Bismillah Kiryana Store",
-    priceTier: "WHOLESALE",
-    creditLimitPaisa: 20000000, // ₨ 200,000
-    currentBalancePaisa: 4500000,
-    currentCrateBalance: 15,
-  },
-  {
-    id: 2,
-    name: "Haji Abdul Sattar",
-    shopName: "Madina Super Store",
-    priceTier: "WHOLESALE",
-    creditLimitPaisa: 30000000, // ₨ 300,000
-    currentBalancePaisa: 1200000,
+    name: "Walk-in Cash Customer",
+    shopName: "Counter Sale",
+    priceTier: "RETAIL",
+    creditLimitPaisa: 0,
+    currentBalancePaisa: 0,
     currentCrateBalance: 0,
   },
   {
+    id: 2,
+    name: "Haji Muhammad Aslam",
+    shopName: "Bismillah Kiryana Store",
+    priceTier: "WHOLESALE",
+    creditLimitPaisa: 15000000,
+    currentBalancePaisa: 4250000,
+    currentCrateBalance: 24,
+  },
+  {
     id: 3,
-    name: "Rehman Ullah",
+    name: "Tariq Mehmood",
+    shopName: "Madina Super Store",
+    priceTier: "WHOLESALE",
+    creditLimitPaisa: 25000000,
+    currentBalancePaisa: 11200000,
+    currentCrateBalance: 40,
+  },
+  {
+    id: 4,
+    name: "Al-Rehman Store",
     shopName: "Al-Rehman Cold Corner",
     priceTier: "RETAIL",
-    creditLimitPaisa: 8000000, // ₨ 80,000
+    creditLimitPaisa: 8000000,
     currentBalancePaisa: 6800000,
     currentCrateBalance: 8,
   },
@@ -185,967 +63,615 @@ export const PosTerminal: React.FC = () => {
     clearCart,
     selectedCustomer,
     setSelectedCustomer,
-    paymentType,
-    setPaymentType,
-    paidAmountPaisa,
-    setPaidAmountPaisa,
     invoiceDiscountPaisa,
     setInvoiceDiscountPaisa,
-    crateDepositChargedPaisa,
-    cratesIssued,
-    setCratesIssued,
-    cratesReturned,
-    setCratesReturned,
-    adminOverridePin,
-    setAdminOverridePin,
-    creditStatus,
-    checkCredit,
     checkout,
-    cancelInvoice,
-    invoices,
     fetchInvoices,
     activeReceipt,
     isReceiptModalOpen,
     closeReceiptModal,
-    openPurchaseModal,
-    openClosingModal,
     isLoading,
-    error,
   } = useSalesStore();
 
-  const [catalogItems, setCatalogItems] = useState<CatalogProduct[]>(DEFAULT_CATALOG);
+  const [products, setProducts] = useState<ProductItem[]>(loadSavedProducts());
+  const [selectedCategory, setSelectedCategory] = useState<string>("All");
   const [searchQuery, setSearchQuery] = useState("");
-  const [cashTenderedPaisa, setCashTenderedPaisa] = useState<number>(0);
-  const [cancelModalInvoiceId, setCancelModalInvoiceId] = useState<number | null>(null);
-  const [cancelReason, setCancelReason] = useState("");
-  const [cancelAdminPin, setCancelAdminPin] = useState("1234");
-  const [showInvoicesDrawer, setShowInvoicesDrawer] = useState(false);
+  const [showAddFlavorModal, setShowAddFlavorModal] = useState(false);
 
-  // New M6 Modals
-  const [isSplitModalOpen, setIsSplitModalOpen] = useState(false);
-  const [isWasooliModalOpen, setIsWasooliModalOpen] = useState(false);
+  // Manual Quantity Editing on Flavor Card
+  const [editingCardId, setEditingCardId] = useState<number | null>(null);
+  const [cardQtyInput, setCardQtyInput] = useState<string>("");
 
-  // Input Refs for Keyboard Navigation
+  // Truck Expenses Allocation
+  const truckExpenses = loadSavedTruckExpenses();
+  const truckExpensePerPackPkr = truckExpenses[0]?.expensePerPackPkr || 20; // Default Rs. 20 per pack
+
+  // Input refs
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const customerSelectRef = useRef<HTMLSelectElement>(null);
   const discountInputRef = useRef<HTMLInputElement>(null);
-  const cashTenderedRef = useRef<HTMLInputElement>(null);
-  const cratesReturnedRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetchInvoices();
   }, [fetchInvoices]);
 
-  // Load dynamic stock catalog
-  useEffect(() => {
-    const loadStock = async () => {
-      try {
-        const stock = await inventoryService.getStockOverview();
-        if (stock && stock.length > 0) {
-          const mapped: CatalogProduct[] = stock.map((s, idx) => ({
-            id: idx + 1,
-            sku: s.sku_code,
-            name: s.name,
-            brand: s.brand || "Dogar",
-            packName: s.pack_unit_name || "Pack",
-            unitsPerPack: s.units_per_pack || 6,
-            wholesalePackPricePaisa: s.wholesale_price_pack_paisa || 108000,
-            retailPackPricePaisa: s.retail_price_pack_paisa || 120000,
-            requiresCrate:
-              s.requires_crate ??
-              (s.packaging_type === "RGB_GLASS" ||
-                s.pack_unit_name?.toLowerCase().includes("crate") ||
-                false),
-            stockBaseUnits: s.current_stock_base_units || 1000,
-          }));
-          setCatalogItems(mapped);
-          return;
-        }
-      } catch {
-        // Fallback to local products store
-      }
+  const categories = ["All", "Next Cola", "Fizz Up", "Other Beverages", "Special"];
 
-      // Default from saved Dogar Traders PET & Juices products store
-      const savedProds = loadSavedProducts();
-      if (savedProds && savedProds.length > 0) {
-        const mappedFromSaved: CatalogProduct[] = savedProds.map((p) => ({
-          id: p.id,
-          sku: p.sku,
-          name: `${p.name} ${p.sizeLabel}`,
-          brand: p.category.includes("Juice") ? "Juice" : "Dogar Traders",
-          packName: p.requiresCrate ? "Crate" : "Pack",
-          unitsPerPack: p.bottlesPerPack,
-          wholesalePackPricePaisa: p.wholesalePackPricePaisa,
-          retailPackPricePaisa: p.retailPackPricePaisa,
-          requiresCrate: p.requiresCrate,
-          stockBaseUnits: p.stockPacks * p.bottlesPerPack,
-        }));
-        setCatalogItems(mappedFromSaved);
-      }
-    };
-    loadStock();
-  }, []);
-
-  // Compute Cart Calculations
-  let subtotalPaisa = 0;
-  let totalBottlesInCart = 0;
-  let glassCratesCount = 0;
-
-  for (const it of cart) {
-    const baseRate = it.unitsPerPack > 0 ? Math.floor(it.unitPricePaisa / it.unitsPerPack) : 0;
-    const lineGross = it.packQty * it.unitPricePaisa + it.looseQty * baseRate;
-    const lineNet = Math.max(0, lineGross - it.lineDiscountPaisa);
-    subtotalPaisa += lineNet;
-    totalBottlesInCart += it.packQty * it.unitsPerPack + it.looseQty;
-
-    const prod = catalogItems.find((c) => c.id === it.productId);
-    if (prod?.requiresCrate) {
-      glassCratesCount += it.packQty;
-    }
-  }
-
-  const netTotalPaisa = Math.max(0, subtotalPaisa - invoiceDiscountPaisa) + crateDepositChargedPaisa;
-
-  // Auto-sync crates issued default if user hasn't typed manually
-  useEffect(() => {
-    if (cratesIssued === 0 && glassCratesCount > 0) {
-      setCratesIssued(glassCratesCount);
-    }
-  }, [glassCratesCount, cratesIssued, setCratesIssued]);
-
-  // Check credit status when due amount changes
-  useEffect(() => {
-    if (paymentType === "CREDIT" || paymentType === "SPLIT") {
-      checkCredit();
-    }
-  }, [paymentType, netTotalPaisa, paidAmountPaisa, checkCredit]);
-
-  // Global Keyboard Shortcuts (F1-F12, Esc) and Barcode Scanner Buffer
-  useEffect(() => {
-    let barcodeBuffer = "";
-    let lastKeyTime = 0;
-
-    const handleGlobalKeyDown = (e: KeyboardEvent) => {
-      // Hotkeys
-      if (e.key === "F1") {
-        e.preventDefault();
-        searchInputRef.current?.focus();
-        setSearchQuery("");
-        return;
-      }
-      if (e.key === "F2") {
-        e.preventDefault();
-        customerSelectRef.current?.focus();
-        return;
-      }
-      if (e.key === "F3") {
-        e.preventDefault();
-        discountInputRef.current?.focus();
-        return;
-      }
-      if (e.key === "F4") {
-        e.preventDefault();
-        setPaymentType("CASH");
-        cashTenderedRef.current?.focus();
-        return;
-      }
-      if (e.key === "F5") {
-        e.preventDefault();
-        setPaymentType("CREDIT");
-        return;
-      }
-      if (e.key === "F6") {
-        e.preventDefault();
-        setIsSplitModalOpen(true);
-        return;
-      }
-      if (e.key === "F7") {
-        e.preventDefault();
-        cratesReturnedRef.current?.focus();
-        return;
-      }
-      if (e.key === "F8") {
-        e.preventDefault();
-        setShowInvoicesDrawer((prev) => !prev);
-        return;
-      }
-      if (e.key === "F9") {
-        e.preventDefault();
-        openPurchaseModal();
-        return;
-      }
-      if (e.key === "F10") {
-        e.preventDefault();
-        setIsWasooliModalOpen(true);
-        return;
-      }
-      if (e.key === "F11") {
-        e.preventDefault();
-        openClosingModal();
-        return;
-      }
-      if (e.key === "F12" || (e.ctrlKey && e.key === "Enter")) {
-        e.preventDefault();
-        if (cart.length > 0 && !isLoading) {
-          handleCheckout();
-        }
-        return;
-      }
-      if (e.key === "Escape") {
-        if (isSplitModalOpen) {
-          setIsSplitModalOpen(false);
-          return;
-        }
-        if (isWasooliModalOpen) {
-          setIsWasooliModalOpen(false);
-          return;
-        }
-        if (showInvoicesDrawer) {
-          setShowInvoicesDrawer(false);
-          return;
-        }
-        if (cancelModalInvoiceId !== null) {
-          setCancelModalInvoiceId(null);
-          return;
-        }
-        setSearchQuery("");
-        return;
-      }
-
-      // Barcode rapid scan listener (<50ms)
-      const now = Date.now();
-      if (now - lastKeyTime > 50) {
-        barcodeBuffer = "";
-      }
-      lastKeyTime = now;
-
-      if (e.key === "Enter" && barcodeBuffer.length >= 3) {
-        const found = catalogItems.find(
-          (p) => p.sku.toLowerCase() === barcodeBuffer.toLowerCase()
-        );
-        if (found) {
-          e.preventDefault();
-          handleProductClick(found);
-          barcodeBuffer = "";
-          return;
-        }
-      } else if (e.key.length === 1 && !e.ctrlKey && !e.altKey) {
-        barcodeBuffer += e.key;
-      }
-    };
-
-    window.addEventListener("keydown", handleGlobalKeyDown);
-    return () => window.removeEventListener("keydown", handleGlobalKeyDown);
-  }, [
-    cart,
-    isLoading,
-    isSplitModalOpen,
-    isWasooliModalOpen,
-    showInvoicesDrawer,
-    cancelModalInvoiceId,
-    catalogItems,
-  ]);
-
-  const filteredProducts = catalogItems.filter(
-    (p) =>
+  // Filtered Products
+  const filteredProducts = products.filter((p) => {
+    const matchesSearch =
       p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.sku.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.brand.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+      p.sku.toLowerCase().includes(searchQuery.toLowerCase());
+    if (selectedCategory === "All") return matchesSearch;
+    if (selectedCategory === "Next Cola") return matchesSearch && p.name.includes("Next Cola");
+    if (selectedCategory === "Fizz Up") return matchesSearch && p.name.includes("Fizz Up");
+    if (selectedCategory === "Other Beverages")
+      return matchesSearch && !p.name.includes("Next Cola") && !p.name.includes("Fizz Up");
+    return matchesSearch;
+  });
 
-  const handleProductClick = (p: CatalogProduct, quantity = 1) => {
+  // Handle Card Click (Increment Quantity by 1 PET pack)
+  const handleProductCardClick = (p: ProductItem, e?: React.MouseEvent) => {
+    e?.stopPropagation();
     const isWholesale = selectedCustomer.priceTier === "WHOLESALE";
     const packPrice = isWholesale ? p.wholesalePackPricePaisa : p.retailPackPricePaisa;
 
-    for (let i = 0; i < quantity; i++) {
-      addToCart({
-        productId: p.id,
-        productName: p.name,
-        skuCode: p.sku,
-        unitsPerPack: p.unitsPerPack,
-        packName: p.packName,
-        unitPricePaisa: packPrice,
-      });
-    }
+    addToCart({
+      productId: p.id,
+      productName: p.name,
+      skuCode: p.sku,
+      unitsPerPack: p.bottlesPerPack || 12,
+      packName: "PET",
+      unitPricePaisa: packPrice,
+    });
   };
 
-  // Omni-search input key handler with Multiplier Syntax (<Qty>*<SKU>)
-  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      const trimmed = searchQuery.trim();
-
-      // Multiplier regex: e.g. "10*NC-250" or "5*1"
-      const multiplierMatch = trimmed.match(/^(\d+)\s*[\*xX]\s*(.+)$/);
-      if (multiplierMatch) {
-        const qty = parseInt(multiplierMatch[1], 10);
-        const query = multiplierMatch[2].trim().toLowerCase();
-        const matched = catalogItems.find(
-          (p) =>
-            p.sku.toLowerCase().includes(query) ||
-            p.id.toString() === query ||
-            p.name.toLowerCase().includes(query)
-        );
-        if (matched && qty > 0) {
-          handleProductClick(matched, qty);
-          setSearchQuery("");
-          return;
+  // Direct manual quantity edit on card
+  const handleSaveCardQty = (productId: number) => {
+    const qty = parseInt(cardQtyInput, 10);
+    if (!isNaN(qty) && qty >= 0) {
+      if (qty === 0) {
+        removeFromCart(productId);
+      } else {
+        const itemInCart = cart.find((it) => it.productId === productId);
+        if (itemInCart) {
+          updateCartItem(productId, { packQty: qty });
+        } else {
+          const prod = products.find((p) => p.id === productId);
+          if (prod) {
+            const isWholesale = selectedCustomer.priceTier === "WHOLESALE";
+            const packPrice = isWholesale ? prod.wholesalePackPricePaisa : prod.retailPackPricePaisa;
+            for (let i = 0; i < qty; i++) {
+              addToCart({
+                productId: prod.id,
+                productName: prod.name,
+                skuCode: prod.sku,
+                unitsPerPack: prod.bottlesPerPack || 12,
+                packName: "PET",
+                unitPricePaisa: packPrice,
+              });
+            }
+          }
         }
-      } else if (filteredProducts.length === 1) {
-        handleProductClick(filteredProducts[0], 1);
-        setSearchQuery("");
-        return;
       }
     }
+    setEditingCardId(null);
+    setCardQtyInput("");
   };
+
+  // Cart financial calculations with Truck Landed Cost
+  let totalItemsPacks = 0;
+  let totalSalePaisa = 0;
+  let totalPurchaseCostPaisa = 0;
+
+  cart.forEach((it) => {
+    totalItemsPacks += it.packQty;
+    const lineGross = it.packQty * it.unitPricePaisa;
+    totalSalePaisa += lineGross;
+
+    const originalProd = products.find((p) => p.id === it.productId);
+    const purchaseCost = originalProd ? originalProd.purchasePackPricePaisa : it.unitPricePaisa * 0.8;
+    totalPurchaseCostPaisa += it.packQty * purchaseCost;
+  });
+
+  const totalTruckExpensesAllocatedPaisa = totalItemsPacks * Math.round(truckExpensePerPackPkr * 100);
+  const totalLandedCostPaisa = totalPurchaseCostPaisa + totalTruckExpensesAllocatedPaisa;
+  const netTotalPaisa = Math.max(0, totalSalePaisa - invoiceDiscountPaisa);
+
+  // Profit Calculations
+  const netProfitPaisa = Math.max(0, netTotalPaisa - totalLandedCostPaisa);
+  const netProfitMargin =
+    netTotalPaisa > 0 ? ((netProfitPaisa / netTotalPaisa) * 100).toFixed(2) : "0.00";
+  const markupPercent =
+    totalLandedCostPaisa > 0 ? ((netProfitPaisa / totalLandedCostPaisa) * 100).toFixed(2) : "0.00";
 
   const handleCheckout = async () => {
     try {
       await checkout();
     } catch {
-      // handled
+      // error handled
     }
   };
-
-  const handleConfirmSplit = async (
-    cashPaisa: number,
-    _creditPaisa: number,
-    overridePin?: string
-  ) => {
-    setPaymentType("SPLIT");
-    setPaidAmountPaisa(cashPaisa);
-    if (overridePin) {
-      setAdminOverridePin(overridePin);
-    }
-    setTimeout(async () => {
-      try {
-        await checkout();
-      } catch {
-        // handled
-      }
-    }, 50);
-  };
-
-  const handleConfirmCancel = async () => {
-    if (!cancelModalInvoiceId) return;
-    try {
-      await cancelInvoice(cancelModalInvoiceId, cancelReason, cancelAdminPin);
-      setCancelModalInvoiceId(null);
-      setCancelReason("");
-    } catch {
-      // handled
-    }
-  };
-
-  const changeDuePaisa = Math.max(0, cashTenderedPaisa - netTotalPaisa);
 
   return (
-    <div className="space-y-4">
-      {/* Top Cashier Cockpit Action Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-800 border border-slate-700 px-5 py-3 rounded-xl shadow-sm">
-        <div className="flex items-center space-x-3">
-          <div className="p-2 bg-red-600/20 text-red-500 rounded-lg">
-            <ShoppingCart className="w-5 h-5" />
+    <div className="space-y-4 bg-[#F5F6FA] min-h-screen text-[#1F2937] p-2">
+      {/* Top VIP Metrics Ribbon (Matching Reference Design) */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        {/* Sales Card */}
+        <div className="bg-[#2563EB] text-white rounded-xl p-3 shadow-sm flex items-center space-x-3">
+          <div className="w-10 h-10 rounded-lg bg-white/20 flex items-center justify-center font-bold">
+            <TrendingUp className="w-5 h-5 text-white" />
           </div>
           <div>
-            <h2 className="text-base font-bold text-white flex items-center space-x-2">
-              <span>POS Cockpit & Billing Counter</span>
-              <span className="text-[10px] font-mono px-2 py-0.5 bg-emerald-950 text-emerald-400 border border-emerald-500/40 rounded-full">
-                ONLINE
-              </span>
-            </h2>
-            <p className="text-xs text-slate-400">High-speed beverage billing, crates & debt accounting (PKR ₨)</p>
+            <span className="text-xs font-bold uppercase tracking-wider opacity-90 block">Sales</span>
+            <div className="text-sm font-bold">Daily: ₨ 45,750</div>
+            <div className="text-[10px] opacity-80">Weekly: ₨ 289,400</div>
           </div>
         </div>
 
-        {/* Action Controls */}
-        <div className="flex items-center space-x-2 text-xs">
-          <button
-            onClick={() => setIsWasooliModalOpen(true)}
-            className="flex items-center space-x-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-bold shadow transition"
-          >
-            <Banknote className="w-4 h-4" />
-            <span>Wasooli Raseed (F10)</span>
-          </button>
-          <button
-            onClick={() => setShowInvoicesDrawer(!showInvoicesDrawer)}
-            className="flex items-center space-x-1.5 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg border border-slate-600 font-medium transition"
-          >
-            <Receipt className="w-4 h-4 text-cyan-400" />
-            <span>Ledger (F8)</span>
-          </button>
-          <button
-            onClick={openPurchaseModal}
-            className="flex items-center space-x-1.5 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg border border-slate-600 font-medium transition"
-          >
-            <Truck className="w-4 h-4" />
-            <span>Inward (F9)</span>
-          </button>
-          <button
-            onClick={openClosingModal}
-            className="flex items-center space-x-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-lg font-bold shadow transition"
-          >
-            <Lock className="w-4 h-4" />
-            <span>Cash Closing (F11)</span>
-          </button>
+        {/* Profit After Expenses Card */}
+        <div className="bg-[#16A34A] text-white rounded-xl p-3 shadow-sm flex items-center space-x-3">
+          <div className="w-10 h-10 rounded-lg bg-white/20 flex items-center justify-center font-bold">
+            <DollarSign className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <span className="text-xs font-bold uppercase tracking-wider opacity-90 block">
+              Profit (After Expenses)
+            </span>
+            <div className="text-sm font-bold">Daily: ₨ 7,350</div>
+            <div className="text-[10px] opacity-80">Weekly: ₨ 52,200</div>
+          </div>
+        </div>
+
+        {/* Purchase Card */}
+        <div className="bg-[#EA580C] text-white rounded-xl p-3 shadow-sm flex items-center space-x-3">
+          <div className="w-10 h-10 rounded-lg bg-white/20 flex items-center justify-center font-bold">
+            <ShoppingCart className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <span className="text-xs font-bold uppercase tracking-wider opacity-90 block">Purchase</span>
+            <div className="text-sm font-bold">Daily: ₨ 38,600</div>
+            <div className="text-[10px] opacity-80">Weekly: ₨ 274,800</div>
+          </div>
+        </div>
+
+        {/* Recovery Card */}
+        <div className="bg-[#7C3AED] text-white rounded-xl p-3 shadow-sm flex items-center space-x-3">
+          <div className="w-10 h-10 rounded-lg bg-white/20 flex items-center justify-center font-bold">
+            <Receipt className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <span className="text-xs font-bold uppercase tracking-wider opacity-90 block">Recovery</span>
+            <div className="text-sm font-bold">Daily: ₨ 33,000</div>
+            <div className="text-[10px] opacity-80">Weekly: ₨ 71,800</div>
+          </div>
+        </div>
+
+        {/* Credit Given Card */}
+        <div className="bg-[#0D9488] text-white rounded-xl p-3 shadow-sm flex items-center space-x-3">
+          <div className="w-10 h-10 rounded-lg bg-white/20 flex items-center justify-center font-bold">
+            <Coins className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <span className="text-xs font-bold uppercase tracking-wider opacity-90 block">Credit Given</span>
+            <div className="text-sm font-bold">Total Due: ₨ 86,200</div>
+            <div className="text-[10px] opacity-80">Outstanding: ₨ 86,200</div>
+          </div>
         </div>
       </div>
 
-      {/* Shortcut Badges Navigation Banner */}
-      <div className="bg-slate-850 bg-slate-900 border border-slate-800 px-4 py-1.5 rounded-lg flex items-center justify-between overflow-x-auto text-[11px] text-slate-400 font-mono">
-        <div className="flex items-center space-x-4">
-          <span><kbd className="text-cyan-400 font-bold bg-slate-800 px-1 rounded">F1</kbd> Search</span>
-          <span><kbd className="text-cyan-400 font-bold bg-slate-800 px-1 rounded">F2</kbd> Khata</span>
-          <span><kbd className="text-cyan-400 font-bold bg-slate-800 px-1 rounded">F3</kbd> Disc</span>
-          <span><kbd className="text-cyan-400 font-bold bg-slate-800 px-1 rounded">F4</kbd> Cash</span>
-          <span><kbd className="text-cyan-400 font-bold bg-slate-800 px-1 rounded">F5</kbd> Udhaar</span>
-          <span><kbd className="text-cyan-400 font-bold bg-slate-800 px-1 rounded">F6</kbd> Split</span>
-          <span><kbd className="text-cyan-400 font-bold bg-slate-800 px-1 rounded">F7</kbd> Crates</span>
-          <span><kbd className="text-cyan-400 font-bold bg-slate-800 px-1 rounded">F10</kbd> Wasooli</span>
-          <span><kbd className="text-cyan-400 font-bold bg-slate-800 px-1 rounded">F12</kbd> Complete</span>
-        </div>
-        <div className="text-slate-500 text-[10px]">Syntax: &lt;Qty&gt;*&lt;SKU&gt; (e.g. 10*NC-250)</div>
-      </div>
-
-      {/* POS Grid: Catalog on Left, Cart & Payment on Right */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-        {/* Left Column: Product Catalog (7 cols) */}
-        <div className="lg:col-span-7 space-y-4">
-          {/* Customer Selection & Credit Status Pill */}
-          <div className="bg-slate-800/80 border border-slate-700 p-4 rounded-xl space-y-2">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-semibold text-slate-300">
-                Customer Khata Selector (Press <kbd className="text-cyan-400 font-mono">F2</kbd>)
-              </label>
-              {creditStatus && (
-                <span
-                  className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
-                    creditStatus.status === "ACTIVE"
-                      ? "bg-emerald-950 text-emerald-400 border border-emerald-500/40"
-                      : creditStatus.status === "WARNING"
-                      ? "bg-amber-950 text-amber-400 border border-amber-500/40"
-                      : "bg-red-950 text-red-400 border border-red-500/40"
-                  }`}
-                >
-                  Credit: {creditStatus.status} ({creditStatus.utilization_percentage}%)
-                </span>
-              )}
+      {/* Main Billing Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+        {/* Left Side: Product Flavor Grid (7 Columns) */}
+        <div className="lg:col-span-7 space-y-3">
+          {/* Search & Add New Flavor Bar */}
+          <div className="flex items-center space-x-2">
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 text-[#6B7280] absolute left-3 top-2.5" />
+              <input
+                ref={searchInputRef}
+                type="text"
+                placeholder="Search Product / SKU..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-white border border-[#E5E7EB] rounded-lg pl-9 pr-3 py-2 text-xs text-[#1F2937] placeholder-[#6B7280] outline-none focus:border-[#D92D3A]"
+              />
             </div>
+            <button
+              onClick={() => setShowAddFlavorModal(true)}
+              className="flex items-center space-x-1.5 px-4 py-2 bg-[#D92D3A] hover:bg-[#B91C2B] text-white rounded-lg text-xs font-bold shadow transition shrink-0"
+            >
+              <Plus className="w-4 h-4" />
+              <span>+ Add New Flavor</span>
+            </button>
+          </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <select
-                ref={customerSelectRef}
-                value={selectedCustomer.id}
-                onChange={(e) => {
-                  const cust = CUSTOMER_OPTIONS.find((c) => c.id === Number(e.target.value));
-                  if (cust) setSelectedCustomer(cust);
-                }}
-                className="bg-slate-900 border border-slate-700 rounded-lg p-2 text-white text-xs outline-none focus:border-cyan-500"
+          {/* Category Filter Tabs */}
+          <div className="flex items-center space-x-2 overflow-x-auto text-xs pb-1">
+            {categories.map((cat) => (
+              <button
+                key={cat}
+                onClick={() => setSelectedCategory(cat)}
+                className={`px-4 py-1.5 rounded-lg font-bold transition whitespace-nowrap ${
+                  selectedCategory === cat
+                    ? "bg-[#D92D3A] text-white shadow"
+                    : "bg-white text-[#1F2937] border border-[#E5E7EB] hover:bg-[#FDECEE]"
+                }`}
               >
-                {CUSTOMER_OPTIONS.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.shopName} ({c.name}) — {c.priceTier}
-                  </option>
-                ))}
-              </select>
-
-              <div className="flex items-center justify-between px-3 py-1.5 bg-slate-900/60 border border-slate-700/60 rounded-lg text-xs font-mono">
-                <span className="text-slate-400">Khata Debt: {formatPkr(selectedCustomer.currentBalancePaisa)}</span>
-                <span className="text-amber-400 font-semibold">{selectedCustomer.currentCrateBalance} Crates</span>
-              </div>
-            </div>
+                {cat}
+              </button>
+            ))}
           </div>
 
-          {/* Search Bar with Multiplier support */}
-          <div className="relative">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
-            <input
-              ref={searchInputRef}
-              type="text"
-              placeholder="Search SKU (NC-250), barcode, or multiplier (10*NC-250)... [F1]"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={handleSearchKeyDown}
-              className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-4 py-2.5 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-cyan-500 font-medium"
-            />
-          </div>
-
-          {/* Beverage SKU Grid */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          {/* Dynamic Flexible Card Grid */}
+          <div
+            className="grid gap-3 max-h-[550px] overflow-y-auto p-1"
+            style={{
+              gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
+            }}
+          >
             {filteredProducts.map((p) => {
-              const isWholesale = selectedCustomer.priceTier === "WHOLESALE";
-              const packPrice = isWholesale ? p.wholesalePackPricePaisa : p.retailPackPricePaisa;
+              const inCartItem = cart.find((it) => it.productId === p.id);
+              const qtyInCart = inCartItem?.packQty || 0;
+              const isSelected = qtyInCart > 0;
+              const isLowStock = p.stockPacks < 50;
 
               return (
-                <button
+                <div
                   key={p.id}
-                  onClick={() => handleProductClick(p)}
-                  className="bg-slate-800 hover:bg-slate-750 active:scale-95 border border-slate-700 hover:border-cyan-500/60 p-3.5 rounded-xl text-left transition flex flex-col justify-between group shadow-sm"
+                  onClick={(e) => handleProductCardClick(p, e)}
+                  className={`relative bg-white rounded-xl p-3 border transition cursor-pointer flex flex-col items-center justify-between shadow-sm hover:shadow-md ${
+                    isSelected ? "border-[#D92D3A] bg-[#FDECEE]" : "border-[#E5E7EB] hover:border-gray-300"
+                  }`}
+                  style={{ minHeight: "175px" }}
                 >
-                  <div>
-                    <div className="flex justify-between items-start mb-1">
-                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-700 text-cyan-300">
-                        {p.sku}
-                      </span>
-                      {p.requiresCrate && (
-                        <span className="text-[10px] text-amber-400 font-semibold">RGB Crate</span>
-                      )}
+                  {/* Selected Badge with Editable Quantity */}
+                  {isSelected && (
+                    <div
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditingCardId(p.id);
+                        setCardQtyInput(qtyInCart.toString());
+                      }}
+                      className="absolute top-2 right-2 bg-[#D92D3A] text-white rounded-full w-6 h-6 flex items-center justify-center font-bold text-xs shadow z-10 hover:scale-110 transition"
+                      title="Click to manually edit quantity"
+                    >
+                      {qtyInCart}
                     </div>
-                    <h3 className="font-bold text-white text-xs group-hover:text-cyan-300 transition line-clamp-2">
-                      {p.name}
-                    </h3>
+                  )}
+
+                  {/* Centered Realistic Bottle Visual */}
+                  <div className="w-16 h-24 my-1 flex items-center justify-center relative">
+                    <svg viewBox="0 0 60 140" className="w-full h-full drop-shadow">
+                      {/* Bottle Cap */}
+                      <rect x="22" y="2" width="16" height="8" rx="2" fill="#D92D3A" />
+                      {/* Bottle Neck */}
+                      <path d="M24 10 L24 28 L14 45 L14 125 A 8 8 0 0 0 22 135 L38 135 A 8 8 0 0 0 46 125 L46 45 L36 28 L36 10 Z" fill={p.bottleColor || "#1E293B"} opacity="0.9" />
+                      {/* Bottle Label */}
+                      <rect x="14" y="55" width="32" height="38" rx="2" fill="#D92D3A" />
+                      <text x="30" y="72" fontSize="7" fill="#FFFFFF" fontWeight="bold" textAnchor="middle">
+                        NEXT
+                      </text>
+                      <text x="30" y="82" fontSize="6" fill="#FDECEE" textAnchor="middle">
+                        COLA
+                      </text>
+                    </svg>
                   </div>
 
-                  <div className="mt-3 pt-2 border-t border-slate-700/60 flex items-center justify-between text-xs">
-                    <span className="font-mono font-bold text-emerald-400">
-                      {formatPkr(packPrice)} <span className="text-[10px] text-slate-400 font-normal">/pack</span>
-                    </span>
-                    <span className="text-[10px] text-cyan-400 font-mono">
-                      {Math.floor(p.stockBaseUnits / (p.unitsPerPack || 1))} packs left
+                  {/* Title & Size */}
+                  <div className="text-center w-full">
+                    <h4 className="font-bold text-xs text-[#1F2937] leading-tight line-clamp-2">
+                      {p.name}
+                    </h4>
+                    <span className="text-[11px] text-[#6B7280] font-mono block mt-0.5">
+                      Stock: {p.stockPacks}
                     </span>
                   </div>
-                </button>
+
+                  {/* Stock Status Pill */}
+                  <div className="w-full mt-2">
+                    <span
+                      className={`block w-full py-0.5 rounded text-[10px] font-bold text-center ${
+                        isLowStock
+                          ? "bg-[#FEF3C7] text-[#B45309]"
+                          : "bg-[#DCFCE7] text-[#16A34A]"
+                      }`}
+                    >
+                      {isLowStock ? "Low Stock" : "In Stock"}
+                    </span>
+                  </div>
+
+                  {/* Quick Inline Quantity Setter Modal / Popover */}
+                  {editingCardId === p.id && (
+                    <div
+                      onClick={(e) => e.stopPropagation()}
+                      className="absolute inset-0 bg-white/95 backdrop-blur-sm rounded-xl p-3 flex flex-col justify-center items-center z-20 space-y-2 border border-[#D92D3A]"
+                    >
+                      <span className="text-xs font-bold text-[#1F2937]">Enter Quantity:</span>
+                      <input
+                        type="number"
+                        min="0"
+                        autoFocus
+                        value={cardQtyInput}
+                        onChange={(e) => setCardQtyInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") handleSaveCardQty(p.id);
+                          if (e.key === "Escape") setEditingCardId(null);
+                        }}
+                        className="w-20 border border-[#D92D3A] rounded px-2 py-1 text-center font-bold font-mono text-sm outline-none"
+                      />
+                      <div className="flex space-x-1">
+                        <button
+                          onClick={() => handleSaveCardQty(p.id)}
+                          className="px-2 py-1 bg-[#16A34A] text-white text-[10px] font-bold rounded"
+                        >
+                          Save
+                        </button>
+                        <button
+                          onClick={() => setEditingCardId(null)}
+                          className="px-2 py-1 bg-gray-200 text-[#1F2937] text-[10px] font-bold rounded"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               );
             })}
+
+            {/* "+ Add New Flavor" Inline Card Button */}
+            <div
+              onClick={() => setShowAddFlavorModal(true)}
+              className="bg-[#FDECEE] border-2 border-dashed border-[#D92D3A] rounded-xl p-4 flex flex-col items-center justify-center cursor-pointer hover:bg-red-100/50 transition group"
+              style={{ minHeight: "175px" }}
+            >
+              <div className="w-10 h-10 rounded-full bg-white text-[#D92D3A] flex items-center justify-center font-bold shadow group-hover:scale-110 transition">
+                <Plus className="w-6 h-6" />
+              </div>
+              <span className="text-xs font-bold text-[#D92D3A] text-center mt-2">
+                + نیا فلیور شامل کریں
+              </span>
+              <span className="text-[10px] text-[#6B7280]">Add Flavor Card</span>
+            </div>
           </div>
         </div>
 
-        {/* Right Column: Active Cart & Checkout (5 cols) */}
-        <div className="lg:col-span-5 space-y-4">
-          <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 shadow-sm space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-700 pb-3">
-              <span className="font-bold text-white text-sm flex items-center space-x-2">
-                <ShoppingCart className="w-4 h-4 text-cyan-400" />
-                <span>Sales Cart ({cart.length} SKUs, {totalBottlesInCart} Bottles)</span>
-              </span>
-              {cart.length > 0 && (
-                <button
-                  onClick={clearCart}
-                  className="text-slate-400 hover:text-red-400 text-xs flex items-center space-x-1"
+        {/* Right Side: Active Invoice & Landed Profit Panel (5 Columns) */}
+        <div className="lg:col-span-5 space-y-3">
+          <div className="bg-white border border-[#E5E7EB] rounded-2xl shadow-sm p-4 space-y-3">
+            {/* Invoice Header */}
+            <div className="flex items-center justify-between pb-2 border-b border-[#E5E7EB]">
+              <div className="flex items-center space-x-2">
+                <div className="w-7 h-7 rounded bg-[#D92D3A] text-white flex items-center justify-center font-bold text-xs">
+                  #
+                </div>
+                <h3 className="font-bold text-sm text-[#1F2937]">Invoice # 000125</h3>
+              </div>
+
+              <div className="flex items-center space-x-1 text-xs">
+                <span className="text-[#6B7280] font-semibold">Customer:</span>
+                <select
+                  value={selectedCustomer.id}
+                  onChange={(e) => {
+                    const cust = CUSTOMER_OPTIONS.find((c) => c.id === Number(e.target.value));
+                    if (cust) setSelectedCustomer(cust);
+                  }}
+                  className="border border-[#E5E7EB] rounded px-2 py-1 text-xs font-bold outline-none bg-white text-[#1F2937]"
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span>Clear</span>
-                </button>
-              )}
+                  {CUSTOMER_OPTIONS.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
 
-            {/* Cart Table */}
-            {cart.length === 0 ? (
-              <div className="py-12 text-center text-slate-400 text-xs space-y-2">
-                <ShoppingCart className="w-8 h-8 mx-auto opacity-30 text-slate-500" />
-                <p>Cart is currently empty.</p>
-                <p className="text-[11px] text-slate-500">
-                  Scan barcode, click SKU on left, or enter <code className="text-cyan-400">10*NC-250</code>
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
-                {cart.map((it) => {
-                  const baseRate =
-                    it.unitsPerPack > 0 ? Math.floor(it.unitPricePaisa / it.unitsPerPack) : 0;
-                  const lineGross = it.packQty * it.unitPricePaisa + it.looseQty * baseRate;
-                  const lineNet = Math.max(0, lineGross - it.lineDiscountPaisa);
-                  const totalLineBottles = it.packQty * it.unitsPerPack + it.looseQty;
+            {/* Invoice Line Items Table */}
+            <div className="overflow-x-auto max-h-[160px] overflow-y-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-[#F5F6FA] text-[#6B7280] font-semibold border-b border-[#E5E7EB]">
+                  <tr>
+                    <th className="p-2 w-8">#</th>
+                    <th className="p-2">Product</th>
+                    <th className="p-2 text-center w-14">Qty</th>
+                    <th className="p-2 text-right">Rate (₨)</th>
+                    <th className="p-2 text-right">Amount (₨)</th>
+                    <th className="p-2 text-right text-[#16A34A]">Profit</th>
+                    <th className="p-2 w-6"></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#E5E7EB] font-mono">
+                  {cart.map((it, idx) => {
+                    const lineAmount = it.packQty * it.unitPricePaisa;
+                    const prod = products.find((p) => p.id === it.productId);
+                    const cost = prod ? prod.purchasePackPricePaisa : it.unitPricePaisa * 0.8;
+                    const lineProfit = Math.max(0, lineAmount - it.packQty * cost);
 
-                  return (
-                    <div
-                      key={it.productId}
-                      className="bg-slate-900/80 border border-slate-700/80 rounded-xl p-3 text-xs space-y-2"
-                    >
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <span className="font-bold text-white">{it.productName}</span>
-                          <span className="text-[10px] text-slate-400 block font-mono">
-                            {it.skuCode} • {it.packName} of {it.unitsPerPack}
-                          </span>
-                        </div>
-                        <button
-                          onClick={() => removeFromCart(it.productId)}
-                          className="text-slate-400 hover:text-red-400 p-1"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-
-                      {/* Multi-packaging Dual Inputs */}
-                      <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-800">
-                        <div>
-                          <label className="text-[10px] text-slate-400 block font-medium">
-                            {it.packName}s (Packs)
-                          </label>
+                    return (
+                      <tr key={it.productId} className="hover:bg-[#F5F6FA]">
+                        <td className="p-2 text-[#6B7280]">{idx + 1}</td>
+                        <td className="p-2 font-sans font-medium text-[#1F2937]">{it.productName}</td>
+                        <td className="p-2 text-center">
                           <input
                             type="number"
-                            min="0"
+                            min="1"
                             value={it.packQty}
                             onChange={(e) =>
                               updateCartItem(it.productId, {
-                                packQty: Math.max(0, parseInt(e.target.value) || 0),
+                                packQty: Math.max(1, parseInt(e.target.value) || 1),
                               })
                             }
-                            className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 font-mono text-white text-xs outline-none"
+                            className="w-12 border border-[#E5E7EB] rounded p-1 text-center font-bold text-xs"
                           />
-                        </div>
-                        <div>
-                          <label className="text-[10px] text-slate-400 block font-medium">Loose (Bottles)</label>
-                          <input
-                            type="number"
-                            min="0"
-                            value={it.looseQty}
-                            onChange={(e) =>
-                              updateCartItem(it.productId, {
-                                looseQty: Math.max(0, parseInt(e.target.value) || 0),
-                              })
-                            }
-                            className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 font-mono text-white text-xs outline-none"
-                          />
-                        </div>
-                      </div>
+                        </td>
+                        <td className="p-2 text-right text-[#6B7280]">
+                          {(it.unitPricePaisa / 100).toFixed(2)}
+                        </td>
+                        <td className="p-2 text-right font-bold text-[#1F2937]">
+                          {(lineAmount / 100).toFixed(2)}
+                        </td>
+                        <td className="p-2 text-right font-bold text-[#16A34A]">
+                          {(lineProfit / 100).toFixed(2)}
+                        </td>
+                        <td className="p-2 text-center">
+                          <button
+                            onClick={() => removeFromCart(it.productId)}
+                            className="text-[#DC2626] hover:text-red-800"
+                          >
+                            ✕
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {cart.length === 0 && (
+                    <tr>
+                      <td colSpan={7} className="text-center py-6 text-xs text-[#6B7280] font-sans">
+                        No products added yet. Click flavor cards on left to add.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
 
-                      <div className="flex justify-between items-center text-[11px] pt-1 border-t border-slate-800 font-mono">
-                        <span className="text-slate-400">= {totalLineBottles} btl total</span>
-                        <span className="font-bold text-emerald-400">{formatPkr(lineNet)}</span>
-                      </div>
-                    </div>
-                  );
-                })}
+            {/* Truck Expenses Strip */}
+            <div className="bg-[#FEF3C7] border border-[#FDE68A] rounded-xl p-2.5 flex items-center justify-between text-xs">
+              <div className="flex items-center space-x-2">
+                <Truck className="w-4 h-4 text-[#B45309]" />
+                <span className="font-bold text-[#B45309]">Truck Expenses:</span>
+                <span className="text-[#6B7280]">Transport Allocation:</span>
               </div>
-            )}
+              <div className="font-mono font-bold text-[#B45309]">
+                ₨ {(totalTruckExpensesAllocatedPaisa / 100).toFixed(2)} (₨ {truckExpensePerPackPkr}/pack)
+              </div>
+            </div>
 
-            {/* Empties Counter Exchange */}
-            <div className="bg-slate-900/60 border border-slate-700/60 p-3 rounded-xl space-y-2 text-xs">
-              <div className="flex items-center justify-between text-slate-300 font-medium">
-                <span className="flex items-center space-x-1.5">
-                  <Coins className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Crate Counter Exchange (Press <kbd className="text-cyan-400 font-mono">F7</kbd>)</span>
-                </span>
-                <span className="font-mono text-amber-400">Required: {glassCratesCount}</span>
+            {/* Profit Calculation (After Expenses) Callout Box */}
+            <div className="bg-[#DCFCE7] border border-[#BBF7D0] rounded-xl p-3 space-y-2 text-xs">
+              <div className="flex items-center space-x-2 font-bold text-[#16A34A] border-b border-[#BBF7D0] pb-1.5">
+                <DollarSign className="w-4 h-4" />
+                <span>Profit Calculation (After Expenses)</span>
               </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-[10px] text-slate-400 block">Issued</label>
+
+              <div className="grid grid-cols-2 gap-2 text-[11px]">
+                <div className="flex justify-between">
+                  <span className="text-[#6B7280]">Total Sale Amount:</span>
+                  <span className="font-mono font-bold text-[#1F2937]">
+                    ₨ {(totalSalePaisa / 100).toFixed(2)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-[#6B7280]">Total Expenses:</span>
+                  <span className="font-mono font-bold text-[#B45309]">
+                    ₨ {(totalTruckExpensesAllocatedPaisa / 100).toFixed(2)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-[#6B7280]">Total Cost (Purchase):</span>
+                  <span className="font-mono font-bold text-[#1F2937]">
+                    ₨ {(totalPurchaseCostPaisa / 100).toFixed(2)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-[#16A34A] font-bold">Net Profit:</span>
+                  <span className="font-mono font-bold text-[#16A34A] text-sm">
+                    ₨ {(netProfitPaisa / 100).toFixed(2)}
+                  </span>
+                </div>
+              </div>
+
+              <div className="text-center font-bold text-[11px] text-[#16A34A] pt-1 border-t border-[#BBF7D0]">
+                Markup: {markupPercent}% | Profit Margin: {netProfitMargin}%
+              </div>
+            </div>
+
+            {/* Summary Totals & Discount Bar */}
+            <div className="grid grid-cols-2 gap-3 text-xs pt-2 border-t border-[#E5E7EB]">
+              <div>
+                <span className="text-[#6B7280] block">Total Items: {cart.length}</span>
+                <span className="text-[#1F2937] font-bold block">Total Packs: {totalItemsPacks}</span>
+              </div>
+              <div className="text-right">
+                <span className="text-[#6B7280] block">Subtotal: ₨ {(totalSalePaisa / 100).toFixed(2)}</span>
+                <div className="flex items-center justify-end space-x-1 mt-0.5">
+                  <span className="text-[#6B7280]">Discount (₨):</span>
                   <input
+                    ref={discountInputRef}
                     type="number"
                     min="0"
-                    value={cratesIssued}
-                    onChange={(e) => setCratesIssued(Math.max(0, parseInt(e.target.value) || 0))}
-                    className="w-full bg-slate-800 border border-slate-700 rounded p-1.5 font-mono text-white text-xs"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] text-slate-400 block">Returned</label>
-                  <input
-                    ref={cratesReturnedRef}
-                    type="number"
-                    min="0"
-                    value={cratesReturned}
-                    onChange={(e) => setCratesReturned(Math.max(0, parseInt(e.target.value) || 0))}
-                    className="w-full bg-slate-800 border border-slate-700 rounded p-1.5 font-mono text-white text-xs"
+                    value={invoiceDiscountPaisa ? invoiceDiscountPaisa / 100 : ""}
+                    onChange={(e) =>
+                      setInvoiceDiscountPaisa(Math.max(0, Math.round((parseFloat(e.target.value) || 0) * 100)))
+                    }
+                    placeholder="0"
+                    className="w-16 border border-[#E5E7EB] rounded p-0.5 text-right font-mono"
                   />
                 </div>
               </div>
             </div>
 
-            {/* Totals & Discounts */}
-            <div className="space-y-2 pt-2 border-t border-slate-700 text-xs">
-              <div className="flex justify-between text-slate-300">
-                <span>Subtotal (Drinks):</span>
-                <span className="font-mono font-semibold">{formatPkr(subtotalPaisa)}</span>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <label className="text-slate-400 flex items-center space-x-1">
-                  <span>Bill Discount (₨)</span>
-                  <kbd className="text-cyan-400 text-[10px] font-mono">F3</kbd>
-                </label>
-                <input
-                  ref={discountInputRef}
-                  type="number"
-                  min="0"
-                  step="any"
-                  value={invoiceDiscountPaisa ? invoiceDiscountPaisa / 100 : ""}
-                  onChange={(e) =>
-                    setInvoiceDiscountPaisa(Math.max(0, Math.round((parseFloat(e.target.value) || 0) * 100)))
-                  }
-                  placeholder="0.00"
-                  className="w-28 text-right bg-slate-900 border border-slate-700 rounded px-2 py-1 font-mono text-white text-xs outline-none focus:border-cyan-500"
-                />
-              </div>
-
-              <div className="flex justify-between items-center text-sm font-bold pt-2 border-t border-slate-700 text-white">
-                <span>NET TOTAL PAYABLE:</span>
-                <span className="font-mono text-lg text-emerald-400">{formatPkr(netTotalPaisa)}</span>
-              </div>
+            {/* Grand Total Bar */}
+            <div className="bg-[#D92D3A] text-white p-3 rounded-xl flex items-center justify-between shadow">
+              <span className="font-bold text-sm tracking-wide">Grand Total:</span>
+              <span className="font-mono text-2xl font-black">₨ {(netTotalPaisa / 100).toFixed(2)}</span>
             </div>
 
-            {/* Payment Mode Selector Buttons */}
-            <div className="space-y-2">
-              <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
-                Payment Channel
-              </label>
-              <div className="grid grid-cols-4 gap-2 text-xs">
-                <button
-                  type="button"
-                  onClick={() => setPaymentType("CASH")}
-                  className={`py-2 px-1 rounded-lg font-bold transition flex flex-col items-center space-y-0.5 ${
-                    paymentType === "CASH"
-                      ? "bg-emerald-600 text-white shadow"
-                      : "bg-slate-700 text-slate-300 hover:bg-slate-600"
-                  }`}
-                >
-                  <span>CASH</span>
-                  <span className="text-[10px] opacity-75 font-mono">F4</span>
-                </button>
+            {/* Action Buttons (Save, Print, Clear) */}
+            <div className="grid grid-cols-3 gap-2 pt-1">
+              <button
+                type="button"
+                onClick={handleCheckout}
+                disabled={isLoading || cart.length === 0}
+                className="py-2.5 bg-[#2563EB] hover:bg-blue-700 active:scale-95 text-white font-bold rounded-xl shadow transition text-xs flex items-center justify-center space-x-1"
+              >
+                <span>Save Bill (F5)</span>
+              </button>
 
-                <button
-                  type="button"
-                  onClick={() => setPaymentType("CREDIT")}
-                  className={`py-2 px-1 rounded-lg font-bold transition flex flex-col items-center space-y-0.5 ${
-                    paymentType === "CREDIT"
-                      ? "bg-amber-600 text-white shadow"
-                      : "bg-slate-700 text-slate-300 hover:bg-slate-600"
-                  }`}
-                >
-                  <span>UDHAAR</span>
-                  <span className="text-[10px] opacity-75 font-mono">F5</span>
-                </button>
+              <button
+                type="button"
+                onClick={handleCheckout}
+                disabled={isLoading || cart.length === 0}
+                className="py-2.5 bg-[#16A34A] hover:bg-green-700 active:scale-95 text-white font-bold rounded-xl shadow transition text-xs flex items-center justify-center space-x-1"
+              >
+                <span>Print Bill (F6)</span>
+              </button>
 
-                <button
-                  type="button"
-                  onClick={() => setIsSplitModalOpen(true)}
-                  className={`py-2 px-1 rounded-lg font-bold transition flex flex-col items-center space-y-0.5 ${
-                    paymentType === "SPLIT"
-                      ? "bg-cyan-600 text-white shadow"
-                      : "bg-slate-700 text-slate-300 hover:bg-slate-600"
-                  }`}
-                >
-                  <span>SPLIT</span>
-                  <span className="text-[10px] opacity-75 font-mono">F6</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setPaymentType("BANK")}
-                  className={`py-2 px-1 rounded-lg font-bold transition flex flex-col items-center space-y-0.5 ${
-                    paymentType === "BANK"
-                      ? "bg-purple-600 text-white shadow"
-                      : "bg-slate-700 text-slate-300 hover:bg-slate-600"
-                  }`}
-                >
-                  <span>BANK</span>
-                  <span className="text-[10px] opacity-75 font-mono">Raast</span>
-                </button>
-              </div>
-
-              {/* Cash Tendered & Change Return if CASH */}
-              {paymentType === "CASH" && (
-                <div className="p-3 bg-slate-900/80 border border-slate-700 rounded-xl space-y-2 text-xs">
-                  <div className="flex justify-between items-center">
-                    <span className="text-slate-400">Cash Received at Counter (₨):</span>
-                    <input
-                      ref={cashTenderedRef}
-                      type="number"
-                      min="0"
-                      step="any"
-                      value={cashTenderedPaisa ? cashTenderedPaisa / 100 : ""}
-                      onChange={(e) =>
-                        setCashTenderedPaisa(Math.max(0, Math.round((parseFloat(e.target.value) || 0) * 100)))
-                      }
-                      placeholder={(netTotalPaisa / 100).toString()}
-                      className="w-28 text-right bg-slate-800 border border-slate-600 rounded px-2 py-1 font-mono text-emerald-300 font-bold"
-                    />
-                  </div>
-                  <div className="flex justify-between items-center pt-1 border-t border-slate-800">
-                    <span className="text-slate-400">Baqaya / Change to Return:</span>
-                    <span className="font-mono font-bold text-cyan-400">{formatPkr(changeDuePaisa)}</span>
-                  </div>
-                </div>
-              )}
-
-              {/* Supervisor PIN Alert if Credit Limit Breached */}
-              {creditStatus?.status === "BREACHED" && (
-                <div className="p-3 bg-red-950/70 border border-red-600/50 rounded-xl space-y-2">
-                  <div className="flex items-center space-x-2 text-red-300 font-bold">
-                    <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
-                    <span>Credit Limit Breached! Admin Override Required</span>
-                  </div>
-                  <input
-                    type="password"
-                    placeholder="Enter Supervisor / Admin PIN (1234)"
-                    value={adminOverridePin}
-                    onChange={(e) => setAdminOverridePin(e.target.value)}
-                    className="w-full bg-slate-900 border border-red-500 rounded p-2 text-white font-mono text-center"
-                  />
-                </div>
-              )}
+              <button
+                type="button"
+                onClick={clearCart}
+                className="py-2.5 bg-white border-2 border-[#DC2626] text-[#DC2626] hover:bg-red-50 font-bold rounded-xl transition text-xs flex items-center justify-center space-x-1"
+              >
+                <span>Clear (ESC)</span>
+              </button>
             </div>
-
-            {/* Error Message */}
-            {error && (
-              <div className="p-2.5 bg-red-950/80 border border-red-500/50 rounded-lg text-red-200 text-xs">
-                {error}
-              </div>
-            )}
-
-            {/* Complete Sale Button (F12) */}
-            <button
-              onClick={handleCheckout}
-              disabled={isLoading || cart.length === 0}
-              className="w-full py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 active:scale-98 disabled:opacity-50 text-white rounded-xl font-bold shadow-lg transition flex items-center justify-center space-x-2 text-sm"
-            >
-              <CreditCard className="w-4 h-4" />
-              <span>{isLoading ? "Finalizing Invoice..." : "Complete Sale & Print Receipt (F12)"}</span>
-            </button>
           </div>
         </div>
       </div>
 
-      {/* M6 Modals */}
-      {/* 1. Thermal Receipt Modal */}
-      {isReceiptModalOpen && activeReceipt && (
-        <ThermalReceiptModal receipt={activeReceipt} onClose={closeReceiptModal} />
-      )}
-
-      {/* 2. Split Payment Modal */}
-      <SplitPaymentModal
-        isOpen={isSplitModalOpen}
-        onClose={() => setIsSplitModalOpen(false)}
-        totalPayablePaisa={netTotalPaisa}
-        customer={selectedCustomer}
-        onConfirmSplit={handleConfirmSplit}
-      />
-
-      {/* 3. Wasooli Raseed Modal */}
-      <WasooliRaseedModal
-        isOpen={isWasooliModalOpen}
-        onClose={() => setIsWasooliModalOpen(false)}
-        customers={CUSTOMER_OPTIONS}
-        preSelectedCustomerId={selectedCustomer.id}
-        onRecoveryComplete={() => {
-          fetchInvoices();
+      {/* Add Flavor Modal */}
+      <AddFlavorModal
+        isOpen={showAddFlavorModal}
+        onClose={() => setShowAddFlavorModal(false)}
+        onFlavorAdded={(newProd) => {
+          setProducts(loadSavedProducts());
+          // Auto add 1 pack to cart for immediate billing
+          addToCart({
+            productId: newProd.id,
+            productName: newProd.name,
+            skuCode: newProd.sku,
+            unitsPerPack: newProd.bottlesPerPack || 12,
+            packName: "PET",
+            unitPricePaisa: newProd.wholesalePackPricePaisa,
+          });
         }}
       />
 
-      {/* Recent Invoices Ledger Drawer */}
-      {showInvoicesDrawer && (
-        <div className="bg-slate-800 border border-slate-700 rounded-xl p-5 shadow-lg space-y-3">
-          <div className="flex justify-between items-center border-b border-slate-700 pb-2">
-            <h3 className="font-bold text-white text-sm">Recent POS Sales Invoices</h3>
-            <button onClick={() => setShowInvoicesDrawer(false)} className="text-slate-400 hover:text-white text-xs">
-              Close (Esc)
-            </button>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs font-mono">
-              <thead className="bg-slate-900/60 text-slate-400">
-                <tr>
-                  <th className="p-2">Invoice #</th>
-                  <th className="p-2">Customer</th>
-                  <th className="p-2">Date</th>
-                  <th className="p-2">Mode</th>
-                  <th className="p-2">Status</th>
-                  <th className="p-2 text-right">Net Total</th>
-                  <th className="p-2 text-center">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-700/60">
-                {invoices.map((inv) => (
-                  <tr key={inv.id} className="hover:bg-slate-750">
-                    <td className="p-2 font-bold text-cyan-300">{inv.invoice_number}</td>
-                    <td className="p-2 font-sans">{inv.customer_name}</td>
-                    <td className="p-2 text-slate-400">{inv.invoice_date}</td>
-                    <td className="p-2">{inv.payment_type}</td>
-                    <td className="p-2">
-                      <span
-                        className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                          inv.status === "PAID"
-                            ? "bg-emerald-950 text-emerald-400"
-                            : inv.status === "CANCELLED"
-                            ? "bg-red-950 text-red-400"
-                            : "bg-amber-950 text-amber-400"
-                        }`}
-                      >
-                        {inv.status}
-                      </span>
-                    </td>
-                    <td className="p-2 text-right font-bold text-white">
-                      {formatPkr(inv.net_total_paisa)}
-                    </td>
-                    <td className="p-2 text-center">
-                      {!inv.is_cancelled && !inv.is_locked && (
-                        <button
-                          onClick={() => setCancelModalInvoiceId(inv.id)}
-                          className="px-2 py-0.5 bg-red-700/80 hover:bg-red-600 text-white rounded text-[10px] font-bold"
-                        >
-                          Cancel Bill
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+      {/* Thermal Receipt Print Modal */}
+      {isReceiptModalOpen && activeReceipt && (
+        <ThermalReceiptModal receipt={activeReceipt} onClose={closeReceiptModal} />
       )}
-
-      {/* Bill Cancellation Dialog */}
-      {cancelModalInvoiceId !== null && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full p-6 space-y-4 text-xs font-sans">
-            <div className="flex items-center space-x-2 text-red-400 font-bold text-sm">
-              <RotateCcw className="w-5 h-5" />
-              <span>Supervisor Bill Cancellation</span>
-            </div>
-            <p className="text-slate-300">
-              Cancelling this invoice will atomically restore warehouse drink stock, reverse customer ledger debt,
-              and record an immutable audit log entry.
-            </p>
-
-            <div>
-              <label className="text-slate-400 block mb-1">Mandatory Cancellation Reason</label>
-              <input
-                type="text"
-                placeholder="e.g. Retailer order canceled prior to departure"
-                value={cancelReason}
-                onChange={(e) => setCancelReason(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2.5 text-white"
-              />
-            </div>
-
-            <div>
-              <label className="text-slate-400 block mb-1">Supervisor / Admin PIN</label>
-              <input
-                type="password"
-                placeholder="Admin PIN (e.g. 1234)"
-                value={cancelAdminPin}
-                onChange={(e) => setCancelAdminPin(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2.5 text-white font-mono"
-              />
-            </div>
-
-            <div className="flex justify-end space-x-3 pt-2">
-              <button
-                onClick={() => setCancelModalInvoiceId(null)}
-                className="px-4 py-2 bg-slate-700 text-white rounded-lg"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleConfirmCancel}
-                disabled={!cancelReason.trim()}
-                className="px-5 py-2 bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white font-bold rounded-lg"
-              >
-                Confirm Cancellation
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Sub-modals */}
-      <PurchaseEntryModal />
-      <DailyClosingModal />
     </div>
   );
 };

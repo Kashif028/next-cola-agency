@@ -1,0 +1,44 @@
+/* src/theme/theme.css - DOGAR TRADERS VIP Light Theme Variables */
+:root {
+  /* Surface & Background Colors */
+  --bg-app: #F5F6FA;
+  --bg-card: #FFFFFF;
+  --bg-table: #FFFFFF;
+  --bg-dialog: #FFFFFF;
+  --border-color: #E5E7EB;
+
+  /* Typography */
+  --text-main: #1F2937;
+  --text-secondary: #6B7280;
+
+  /* Brand Colors */
+  --brand-red: #D92D3A;
+  --brand-red-hover: #B91C2B;
+  --brand-red-light: #FDECEE;
+
+  /* Semantic Action Buttons */
+  --btn-save: #2563EB;
+  --btn-print: #16A34A;
+  --btn-clear-border: #DC2626;
+
+  /* Semantic Status Colors (Behavioral) */
+  --status-profit-text: #16A34A;
+  --status-profit-bg: #DCFCE7;
+  --status-instock-text: #16A34A;
+  --status-instock-bg: #DCFCE7;
+
+  --status-lowstock-text: #B45309;
+  --status-lowstock-bg: #FEF3C7;
+
+  --status-danger-text: #DC2626;
+  --status-danger-bg: #FEE2E2;
+
+  --status-sale-text: #2563EB;
+  --status-sale-bg: #DBEAFE;
+
+  --status-recovery-text: #7C3AED;
+  --status-recovery-bg: #EDE9FE;
+
+  --status-purchase-text: #0D9488;
+  --status-purchase-bg: #CCFBF1;
+}

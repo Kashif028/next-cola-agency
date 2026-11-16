@@ -12,7 +12,7 @@ export interface ProductItem {
   id: number;
   sku: string;
   name: string; // e.g. "Cola Next", "Fizz Up"
-  category: "Cold Drink (PET)" | "Cold Drink (RGB)" | "Cold Drink (Can)" | "Juices" | "Mineral Water" | "Other";
+  category: "Cold Drink (PET)" | "Cold Drink (RGB)" | "Cold Drink (Can)" | "Juices" | "Mineral Water" | "Other" | "Special" | "Next Cola" | "Fizz Up" | "Other Beverages";
   sizeLabel: string; // e.g. "2250 ML"
   sizeMl: number;
   bottlesPerPack: number;
@@ -22,6 +22,9 @@ export interface ProductItem {
   stockPacks: number; // Stored and displayed strictly in PACKS
   requiresCrate: boolean;
   notes?: string;
+  imageUrl?: string;
+  bottleColor?: string;
+  truckExpensePaisa?: number; // Allocated truck transportation expense per pack
 }
 
 export const INITIAL_BOTTLE_SIZES: BottleSizeConfig[] = [

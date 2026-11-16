@@ -1,6 +1,12 @@
 // src/types/khata.ts
 
-export type AccountCategory = "RETAILER" | "SUPPLIER" | "VILLAGE_KIRAYANA" | "INDIVIDUAL" | "OTHER";
+export type AccountCategory =
+  | "RETAILER"
+  | "SUPPLIER"
+  | "VILLAGE_KIRAYANA"
+  | "INDIVIDUAL"
+  | "SALESMAN"
+  | "OTHER";
 export type TransactionType = "DEBIT" | "CREDIT";
 
 export interface KhataAccount {
@@ -104,6 +110,54 @@ export const INITIAL_KHATA_ACCOUNTS: KhataAccount[] = [
     createdAt: "2026-01-01T08:00:00Z",
     updatedAt: "2026-11-10T12:00:00Z",
   },
+  {
+    id: 5,
+    holderName: "Muhammad Ali",
+    shopName: "City Center & Shahi Bazaar (Beat 01)",
+    villageName: "Rahim Yar Khan",
+    shopAddress: "Beat 01 Depot",
+    streetArea: "Commercial Zone",
+    mobileNumber: "0300-1112233",
+    accountOpeningDate: "2026-11-01",
+    openingBalance: 0,
+    currentBalance: 0,
+    category: "SALESMAN",
+    notes: "Delivery van salesman Beat 01",
+    createdAt: "2026-11-01T08:00:00Z",
+    updatedAt: "2026-11-01T08:00:00Z",
+  },
+  {
+    id: 6,
+    holderName: "Rashid Mahmood",
+    shopName: "Khanpur Road Wholesale (Beat 02)",
+    villageName: "Khanpur Road",
+    shopAddress: "Beat 02 Depot",
+    streetArea: "Wholesale Market",
+    mobileNumber: "0301-2223344",
+    accountOpeningDate: "2026-11-01",
+    openingBalance: 0,
+    currentBalance: 0,
+    category: "SALESMAN",
+    notes: "Wholesale route salesman Beat 02",
+    createdAt: "2026-11-01T08:00:00Z",
+    updatedAt: "2026-11-01T08:00:00Z",
+  },
+  {
+    id: 7,
+    holderName: "Imran Khan",
+    shopName: "Sadiqabad Highway Route (Beat 03)",
+    villageName: "Sadiqabad",
+    shopAddress: "Beat 03 Depot",
+    streetArea: "Highway Beat",
+    mobileNumber: "0302-3334455",
+    accountOpeningDate: "2026-11-01",
+    openingBalance: 0,
+    currentBalance: 0,
+    category: "SALESMAN",
+    notes: "Highway route salesman Beat 03",
+    createdAt: "2026-11-01T08:00:00Z",
+    updatedAt: "2026-11-01T08:00:00Z",
+  },
 ];
 
 export const INITIAL_KHATA_TRANSACTIONS: KhataTransaction[] = [
@@ -188,7 +242,17 @@ export function loadSavedKhataAccounts(): KhataAccount[] {
   if (typeof window === "undefined") return INITIAL_KHATA_ACCOUNTS;
   try {
     const raw = localStorage.getItem(STORAGE_ACCOUNTS);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const accounts: KhataAccount[] = JSON.parse(raw);
+      const existingIds = new Set(accounts.map((a) => a.id));
+      const missingSeeds = INITIAL_KHATA_ACCOUNTS.filter((a) => !existingIds.has(a.id));
+      if (missingSeeds.length > 0) {
+        const merged = [...accounts, ...missingSeeds];
+        saveKhataAccounts(merged);
+        return merged;
+      }
+      return accounts;
+    }
   } catch {
     // fallback
   }

@@ -144,11 +144,19 @@ export interface LoadingSheetItemDto {
   line_cost_paisa: Paisa;
   line_retail_paisa: Paisa;
   sold_base: number;
+  sold_packs?: number;
+  sold_loose?: number;
   returned_packs: number;
   returned_loose: number;
   total_returned_base: number;
   breakage_base: number;
+  damaged_packs?: number;
+  damaged_loose?: number;
+  damaged_base?: number;
   variance_base: number;
+  unit_wholesale_price_paisa?: Paisa;
+  line_wholesale_revenue_paisa?: Paisa;
+  line_revenue_paisa?: Paisa;
 }
 
 export interface LoadingSheetDetailDto {
@@ -166,7 +174,7 @@ export interface LoadingSheetDetailDto {
   driver_id?: number | null;
   driver_name: string;
   helper_name?: string | null;
-  status: "DRAFT" | "ISSUED" | "DISPATCHED" | "SETTLED" | "COMPLETED" | "AUDITED";
+  status: "DRAFT" | "ISSUED" | "DISPATCHED" | "SETTLED" | "COMPLETED" | "AUDITED" | "OPEN" | "FINALIZED";
   dispatched_at?: string | null;
   departure_time?: string | null;
   returned_at?: string | null;
@@ -189,6 +197,17 @@ export interface LoadingSheetDetailDto {
   created_at: string;
   updated_at: string;
   items: LoadingSheetItemDto[];
+
+  // Extended Salesman, Financial & Multi-Edit Lifecycle Properties
+  salesman_id?: number | null;
+  salesman_name?: string | null;
+  salesman_khata_id?: number | null;
+  total_sales_revenue_paisa?: Paisa;
+  cash_deposited_paisa?: Paisa;
+  unpaid_balance_paisa?: Paisa;
+  khata_transaction_id?: number | null;
+  edit_count?: number;
+  last_edited_at?: string | null;
 }
 
 export interface LoadingSheetSummaryDto {
@@ -313,4 +332,77 @@ export interface VanSettlementResultDto {
   cash_variance_paisa: Paisa;
   total_stock_variance_base: number;
   total_shortage_paisa: Paisa;
+}
+
+// ============================================================================
+// 5. UNIFIED DISPATCH, RETURN & MULTI-EDIT LIFECYCLE DTOs
+// ============================================================================
+export interface DispatchLineItem {
+  productId: number;
+  productSku: string;
+  productName: string;
+  packName: string;
+  unitsPerPack: number;
+  wholesalePackPricePaisa: number;
+  isGlass: boolean;
+  // Morning inputs
+  dispatchedPacks: number;
+  dispatchedLoose: number;
+  totalDispatchedBase: number;
+  // Evening return inputs
+  soldPacks: number;
+  soldLoose: number;
+  totalSoldBase: number;
+  returnedIntactPacks: number;
+  returnedIntactLoose: number;
+  totalReturnedIntactBase: number;
+  damagedPacks: number;
+  damagedLoose: number;
+  totalDamagedBase: number;
+  // Financial calculation
+  lineRevenuePaisa: number;
+}
+
+export interface DailyDispatchRecord {
+  id: number;
+  sheetNumber: string;
+  date: string;
+  routeId: number;
+  routeName: string;
+  salesmanId: number;
+  salesmanName: string;
+  salesmanKhataId?: number;
+  vehicleNumber: string;
+  status: "DRAFT" | "OPEN" | "ISSUED" | "SETTLED" | "FINALIZED";
+  emptyCratesLoaded: number;
+  emptyCratesReturned: number;
+  items: DispatchLineItem[];
+  totalSalesRevenuePaisa: number;
+  cashDepositedPaisa: number;
+  unpaidBalancePaisa: number;
+  khataTransactionId?: number;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RecalibrateSheetItemPayload {
+  productId: number;
+  dispatchedPacks: number;
+  dispatchedLoose: number;
+  returnedIntactPacks: number;
+  returnedIntactLoose: number;
+  damagedPacks: number;
+  damagedLoose: number;
+  wholesalePackPricePaisa?: number;
+  unitsPerPack?: number;
+}
+
+export interface RecalibrateSheetPayload {
+  sheetId: number;
+  items: RecalibrateSheetItemPayload[];
+  cashDepositedPaisa: number;
+  notes?: string;
+  status?: "OPEN" | "ISSUED" | "SETTLED" | "FINALIZED";
+  salesmanKhataId?: number;
 }

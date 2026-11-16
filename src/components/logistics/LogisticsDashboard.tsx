@@ -21,6 +21,7 @@ import { LoadingManifestModal } from "./LoadingManifestModal";
 import { ActiveDeliverySheetsList } from "./ActiveDeliverySheetsList";
 import { VanSettlementModal } from "./VanSettlementModal";
 import { GatePassPrintModal } from "./GatePassPrintModal";
+import { TruckExpensesDashboard } from "./TruckExpensesDashboard";
 
 export function LogisticsDashboard() {
   const {
@@ -36,7 +37,7 @@ export function LogisticsDashboard() {
     clearError,
   } = useLogisticsStore();
 
-  const [activeTab, setActiveTab] = useState<"sheets" | "routes" | "fleet">("sheets");
+  const [activeTab, setActiveTab] = useState<"sheets" | "routes" | "fleet" | "truckExpenses">("sheets");
 
   useEffect(() => {
     fetchInitialData();
@@ -215,10 +216,22 @@ export function LogisticsDashboard() {
           <Car className="w-4 h-4" />
           <span>Fleet Vehicles & Capacities ({vehicles.length})</span>
         </button>
+        <button
+          onClick={() => setActiveTab("truckExpenses")}
+          className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition ${
+            activeTab === "truckExpenses"
+              ? "bg-purple-600 text-white shadow"
+              : "text-slate-400 hover:bg-slate-800 hover:text-white"
+          }`}
+        >
+          <Truck className="w-4 h-4 text-purple-400" />
+          <span>Truck Expenses & Cost Allocation</span>
+        </button>
       </div>
 
       {/* Active Tab View */}
       {activeTab === "sheets" && <ActiveDeliverySheetsList />}
+      {activeTab === "truckExpenses" && <TruckExpensesDashboard />}
 
       {/* Tab 2: Route Masters Table */}
       {activeTab === "routes" && (
