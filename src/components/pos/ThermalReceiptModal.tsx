@@ -34,30 +34,34 @@ export function ThermalReceiptModal({ receipt, onClose }: ThermalReceiptModalPro
         @media print {
           @page {
             margin: 0mm !important;
-            size: auto;
+            size: ${paperWidth === "80mm" ? "80mm auto" : "58mm auto"} !important;
           }
-          body {
+          html, body {
             margin: 0 !important;
             padding: 0 !important;
             background: #ffffff !important;
+            width: 100% !important;
+            height: auto !important;
           }
-          body * {
-            visibility: hidden;
-          }
-          #dogar-thermal-print-area,
-          #dogar-thermal-print-area * {
-            visibility: visible;
+          body > *:not(#dogar-thermal-print-area) {
+            display: none !important;
           }
           #dogar-thermal-print-area {
-            position: absolute !important;
-            left: 0 !important;
-            top: 0 !important;
+            display: block !important;
+            visibility: visible !important;
+            position: static !important;
             width: ${paperWidth === "80mm" ? "76mm" : "54mm"} !important;
-            margin: 0 !important;
-            padding: 4mm !important;
+            max-width: 100% !important;
+            margin: 0 auto !important;
+            padding: 2mm 3mm !important;
             box-shadow: none !important;
             border: none !important;
-            font-size: 11px !important;
+            font-size: ${paperWidth === "80mm" ? "12px" : "10px"} !important;
+            line-height: 1.3 !important;
+            color: #000000 !important;
+          }
+          #dogar-thermal-print-area * {
+            visibility: visible !important;
             color: #000000 !important;
           }
           .no-print {
