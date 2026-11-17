@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import { useLogisticsStore } from "../../store/useLogisticsStore";
 import { formatPkr } from "../../types/domain";
+import { LoadingSheetSummaryDto } from "../../types/logistics";
 import {
   Truck,
   MapPin,
@@ -13,6 +14,7 @@ import {
   CheckCircle,
   AlertCircle,
   X,
+  FileCheck,
 } from "lucide-react";
 
 import { RouteMasterModal } from "./RouteMasterModal";
@@ -23,19 +25,27 @@ import { VanSettlementModal } from "./VanSettlementModal";
 import { GatePassPrintModal } from "./GatePassPrintModal";
 import { TruckExpensesDashboard } from "./TruckExpensesDashboard";
 
-export function LogisticsDashboard() {
+export interface LogisticsDashboardProps {
+  initialSheets?: LoadingSheetSummaryDto[];
+}
+
+export function LogisticsDashboard(props: LogisticsDashboardProps = {}) {
+  const store = useLogisticsStore();
   const {
     routes,
     vehicles,
-    loadingSheets,
+    dailyDispatches,
     fetchInitialData,
     openCreateManifestModal,
+    openSettlementModal,
     openRouteModal,
     openVehicleModal,
     successMessage,
     error,
     clearError,
-  } = useLogisticsStore();
+  } = store;
+
+  const loadingSheets = props?.initialSheets || store.loadingSheets;
 
   const [activeTab, setActiveTab] = useState<"sheets" | "routes" | "fleet" | "truckExpenses">("sheets");
 
@@ -45,21 +55,31 @@ export function LogisticsDashboard() {
 
   // Aggregate Metrics
   const activeTripsCount = loadingSheets.filter(
-    (s) => s.status === "ISSUED" || s.status === "DISPATCHED"
+    (s) => s.status === "ISSUED" || s.status === "DISPATCHED" || s.status === "OPEN"
   ).length;
 
   const totalInTransitValue = loadingSheets
-    .filter((s) => s.status === "ISSUED" || s.status === "DISPATCHED")
-    .reduce((acc, s) => acc + s.total_load_retail_paisa, 0);
+    .filter((s) => s.status === "ISSUED" || s.status === "DISPATCHED" || s.status === "OPEN")
+    .reduce((acc, s) => acc + (s.total_load_retail_paisa || 0), 0);
 
   const totalCratesInCirculation = loadingSheets
-    .filter((s) => s.status === "ISSUED" || s.status === "DISPATCHED")
-    .reduce((acc, s) => acc + s.empty_crates_loaded, 0);
+    .filter((s) => s.status === "ISSUED" || s.status === "DISPATCHED" || s.status === "OPEN")
+    .reduce((acc, s) => acc + (s.empty_crates_loaded || 0), 0);
 
-  const totalSettledTodayCash = loadingSheets
-    .filter((s) => s.status === "SETTLED" || s.status === "COMPLETED")
-    .reduce((acc, _s) => acc + 8500000, 0);
+  const totalSettledTodayCash = dailyDispatches
+    .filter((d) => d.status === "SETTLED" || d.status === "FINALIZED")
+    .reduce((acc, d) => acc + (d.cashDepositedPaisa || d.totalSalesRevenuePaisa || 0), 0);
 
+  const handleEveningReturnQuickAction = () => {
+    const onRouteSheet = loadingSheets.find(
+      (s) => s.status === "ISSUED" || s.status === "DISPATCHED" || s.status === "OPEN"
+    );
+    if (onRouteSheet) {
+      openSettlementModal(onRouteSheet.id);
+    } else {
+      setActiveTab("sheets");
+    }
+  };
 
   return (
     <div className="space-y-5">
@@ -83,13 +103,20 @@ export function LogisticsDashboard() {
         </div>
 
         {/* Quick Action Buttons */}
-        <div className="flex items-center space-x-2 text-xs">
+        <div className="flex flex-wrap items-center gap-2 text-xs">
           <button
             onClick={openCreateManifestModal}
             className="flex items-center space-x-1.5 px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 active:scale-95 text-white font-bold rounded-lg shadow-lg transition"
           >
             <Plus className="w-4 h-4" />
-            <span>+ Morning Manifest (Dispatch)</span>
+            <span>+ Morning Dispatch (صبح ڈسپیچ)</span>
+          </button>
+          <button
+            onClick={handleEveningReturnQuickAction}
+            className="flex items-center space-x-1.5 px-3.5 py-2 bg-slate-700 hover:bg-slate-600 text-amber-300 font-bold rounded-lg border border-amber-500/40 shadow transition"
+          >
+            <FileCheck className="w-4 h-4 text-amber-400" />
+            <span>Evening Return (شام واپسی)</span>
           </button>
           <button
             onClick={() => openRouteModal()}
@@ -230,7 +257,7 @@ export function LogisticsDashboard() {
       </div>
 
       {/* Active Tab View */}
-      {activeTab === "sheets" && <ActiveDeliverySheetsList />}
+      {activeTab === "sheets" && <ActiveDeliverySheetsList initialSheets={props?.initialSheets} />}
       {activeTab === "truckExpenses" && <TruckExpensesDashboard />}
 
       {/* Tab 2: Route Masters Table */}

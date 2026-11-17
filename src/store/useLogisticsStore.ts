@@ -324,6 +324,8 @@ interface LogisticsState {
   // Multi-Edit Engine
   recalibrateDispatchSheet: (payload: RecalibrateSheetPayload) => Promise<DailyDispatchRecord>;
   recalibrateSheet: (payload: RecalibrateSheetPayload) => Promise<DailyDispatchRecord>;
+  recalibrateSheetSnapshot: (payload: RecalibrateSheetPayload) => Promise<DailyDispatchRecord>;
+  editDailyDispatch: (payload: RecalibrateSheetPayload) => Promise<DailyDispatchRecord>;
 
   // Khata Synchronization
   syncSalesmanKhataDebit: (salesmanAccountId: number, sheetNumber: string, amountPaisa: number, date?: string) => void;
@@ -360,7 +362,7 @@ interface LogisticsState {
 export const useLogisticsStore = create<LogisticsState>((set, get) => ({
   routes: [],
   vehicles: [],
-  loadingSheets: [],
+  loadingSheets: loadSavedDailyDispatches().map(dispatchRecordToSummaryDto),
   dailyDispatches: loadSavedDailyDispatches(),
   selectedSheetDetail: null,
   activeReconciliation: null,
@@ -773,13 +775,13 @@ export const useLogisticsStore = create<LogisticsState>((set, get) => ({
   recalibrateDispatchSheet: async (payload: RecalibrateSheetPayload) => {
     const dispatches = get().dailyDispatches;
     let oldRecord = dispatches.find(
-      (d) => d.id === payload.sheetId || d.sheetNumber === String(payload.sheetId)
+      (d) => d.id === payload.sheetId || d.id === Number(payload.sheetId) || d.sheetNumber === String(payload.sheetId)
     );
 
     if (!oldRecord) {
       // Check in loadingSheets / default
       oldRecord = INITIAL_DAILY_DISPATCHES.find(
-        (d) => d.id === payload.sheetId || d.sheetNumber === String(payload.sheetId)
+        (d) => d.id === payload.sheetId || d.id === Number(payload.sheetId) || d.sheetNumber === String(payload.sheetId)
       );
       if (!oldRecord) {
         throw new Error(`Sheet ID ${payload.sheetId} not found for recalibration`);
@@ -825,11 +827,11 @@ export const useLogisticsStore = create<LogisticsState>((set, get) => ({
       const unitWholesalePrice = Math.round(wholesalePackPricePaisa / unitsPerPack);
 
       const newDispatchedBase =
-        itemPayload.dispatchedPacks * unitsPerPack + itemPayload.dispatchedLoose;
+        (itemPayload.dispatchedPacks || 0) * unitsPerPack + (itemPayload.dispatchedLoose || 0);
       const newReturnedIntactBase =
-        itemPayload.returnedIntactPacks * unitsPerPack + itemPayload.returnedIntactLoose;
+        (itemPayload.returnedIntactPacks || 0) * unitsPerPack + (itemPayload.returnedIntactLoose || 0);
       const newDamagedBase =
-        itemPayload.damagedPacks * unitsPerPack + itemPayload.damagedLoose;
+        (itemPayload.damagedPacks || 0) * unitsPerPack + (itemPayload.damagedLoose || 0);
 
       const newNetOut = newDispatchedBase - newReturnedIntactBase;
 
@@ -1000,6 +1002,14 @@ export const useLogisticsStore = create<LogisticsState>((set, get) => ({
   },
 
   recalibrateSheet: async (payload: RecalibrateSheetPayload) => {
+    return get().recalibrateDispatchSheet(payload);
+  },
+
+  recalibrateSheetSnapshot: async (payload: RecalibrateSheetPayload) => {
+    return get().recalibrateDispatchSheet(payload);
+  },
+
+  editDailyDispatch: async (payload: RecalibrateSheetPayload) => {
     return get().recalibrateDispatchSheet(payload);
   },
 

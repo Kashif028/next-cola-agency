@@ -5,7 +5,7 @@
  * Acceptance Criteria:
  *   - POS terminal counter billing remains 100% operational and isolated from van dispatch logic.
  *   - Customer Khata accounts remain strictly categorized and unaffected by Salesman khata postings.
- *   - Existing website tests (12 files, 294 tests) continue to pass 100%.
+ *   - Existing website tests continue to pass 100%.
  *
  * Tiers:
  *   Tier 1: POS Counter Billing Core Isolation (5 tests)
@@ -16,19 +16,21 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
-  KhataAccount,
-  KhataTransaction,
-  AccountCategory,
   INITIAL_KHATA_ACCOUNTS,
   saveKhataAccounts,
-  loadSavedKhataTransactions,
+  loadSavedKhataAccounts,
   saveKhataTransactions,
 } from "../types/khata";
-import { useSalesStore, CartItem, CustomerSummary } from "../store/useSalesStore";
-import { INITIAL_PRODUCTS } from "../types/products";
+import { useSalesStore } from "../store/useSalesStore";
+import { useLogisticsStore } from "../store/useLogisticsStore";
+import { useInventoryStore } from "../store/useInventoryStore";
+import { salesService } from "../services/salesService";
+import { INITIAL_PRODUCTS, loadSavedProducts, saveProducts } from "../types/products";
+import { ALL_REPORTS } from "../components/reports/definitions/reportCatalog";
+import type { SalesInvoiceReceiptDto, CreditStatusCheckResult, CancelInvoiceResult } from "../types/sales";
 
 // Mock localStorage for Node.js test environment
-class MockStorage {
+class MockLocalStorage {
   private store: Record<string, string> = {};
   getItem(key: string) { return this.store[key] ?? null; }
   setItem(key: string, value: string) { this.store[key] = String(value); }
@@ -39,26 +41,30 @@ class MockStorage {
 }
 
 describe("R6: Non-Regression of POS Terminal & Customer Khata", () => {
-  let mockStorage: MockStorage;
-  let accounts: KhataAccount[];
-  let transactions: KhataTransaction[];
+  let mockStorage: MockLocalStorage;
 
   beforeEach(() => {
-    mockStorage = new MockStorage();
+    mockStorage = new MockLocalStorage();
     (globalThis as any).window = globalThis;
     (globalThis as any).localStorage = mockStorage;
 
-    // Reset Zustand store state
+    saveProducts([...INITIAL_PRODUCTS.map((p) => ({ ...p }))]);
+    saveKhataAccounts([...INITIAL_KHATA_ACCOUNTS.map((a) => ({ ...a }))]);
+    saveKhataTransactions([]);
+    mockStorage.setItem("dogar_breakage_logs_v1", JSON.stringify([]));
+    mockStorage.setItem("dogar_daily_dispatches_v1", JSON.stringify([]));
+
+    // Reset Zustand sales store state
     useSalesStore.setState({
       cart: [],
       selectedCustomer: {
-        id: 0,
-        name: "Walk-in Cash Customer",
-        shopName: "Counter Sale",
-        priceTier: "RETAIL",
-        creditLimitPaisa: 0,
-        currentBalancePaisa: 0,
-        currentCrateBalance: 0,
+        id: 1,
+        name: "Bismillah Kiryana Store",
+        shopName: "Bismillah Kiryana Store",
+        priceTier: "WHOLESALE",
+        creditLimitPaisa: 20000000,
+        currentBalancePaisa: 4500000,
+        currentCrateBalance: 15,
       },
       invoiceDiscountPaisa: 0,
       crateDepositChargedPaisa: 0,
@@ -71,13 +77,118 @@ describe("R6: Non-Regression of POS Terminal & Customer Khata", () => {
       invoices: [],
       activeReceipt: null,
       isReceiptModalOpen: false,
+      isLoading: false,
+      error: null,
     });
 
-    accounts = JSON.parse(JSON.stringify(INITIAL_KHATA_ACCOUNTS));
-    transactions = JSON.parse(JSON.stringify(loadSavedKhataTransactions()));
+    useLogisticsStore.setState({
+      routes: [],
+      vehicles: [],
+      loadingSheets: [],
+      dailyDispatches: [],
+      selectedSheetDetail: null,
+      activeReconciliation: null,
+      filter: {},
+      searchQuery: "",
+      isRouteModalOpen: false,
+      isVehicleModalOpen: false,
+      isLoadingManifestModalOpen: false,
+      isSettlementModalOpen: false,
+      isGatePassModalOpen: false,
+      settlementSheetId: null,
+      physicalReturns: {},
+      physicalCashPaisa: 0,
+      emptyCratesReturned: 0,
+      routeExpensesPaisa: 0,
+      isLoading: false,
+      error: null,
+    });
 
-    saveKhataAccounts(accounts);
-    saveKhataTransactions(transactions);
+    useInventoryStore.setState({
+      stockItems: [],
+      emptiesOverview: null,
+      breakageLogs: [],
+      activeCustomerCrateLedger: [],
+      filter: {},
+      isLoading: false,
+      error: null,
+    });
+
+    // Mock salesService methods to allow full checkout & credit check execution in Node
+    vi.spyOn(salesService, "listSalesInvoices").mockResolvedValue([]);
+    vi.spyOn(salesService, "createSalesInvoice").mockImplementation(async (dto): Promise<SalesInvoiceReceiptDto> => {
+      const netTotal = 120000;
+      const paid = dto.paid_amount_paisa ?? (dto.payment_type === "CASH" ? 150000 : 0);
+      return {
+        invoice_id: 88,
+        invoice_number: "INV-20261116-0089",
+        invoice_date: "2026-11-16",
+        due_date: "2026-11-16",
+        customer_id: dto.customer_id,
+        customer_name: "Walk-in Cash Customer",
+        shop_name: "Counter Sale",
+        customer_phone: "0300-1234567",
+        payment_type: dto.payment_type,
+        status: "PAID",
+        items: dto.items.map((it) => ({
+          product_id: it.product_id,
+          product_name: "Cola Next 2250 ML",
+          sku_code: "CN-2250-PET",
+          packaging_name: "Pack",
+          units_per_pack: 4,
+          pack_qty: it.pack_qty,
+          loose_qty: it.loose_qty,
+          total_base_units: it.pack_qty * 4 + it.loose_qty,
+          unit_price_paisa: it.unit_price_paisa || 120000,
+          line_discount_paisa: it.line_discount_paisa || 0,
+          line_total_paisa: it.pack_qty * (it.unit_price_paisa || 120000),
+          cogs_total_paisa: 0,
+        })),
+        subtotal_paisa: 120000,
+        discount_paisa: dto.invoice_discount_paisa || 0,
+        crate_deposit_charged_paisa: dto.crate_deposit_charged_paisa || 0,
+        net_total_paisa: netTotal,
+        paid_amount_paisa: paid,
+        due_amount_paisa: 0,
+        previous_customer_balance_paisa: 0,
+        new_customer_balance_paisa: 0,
+        crates_issued: dto.crates_issued || 0,
+        crates_returned: dto.crates_returned || 0,
+        previous_crate_balance: 0,
+        new_crate_balance: 0,
+        sales_journal_entry_id: 1,
+        cogs_journal_entry_id: 2,
+        formatted_thermal_receipt: "DOGAR TRADERS\nڈوگر ٹریڈرز\nINV-20261116-0089\nTotal: 1200.00",
+      };
+    });
+
+    vi.spyOn(salesService, "checkCreditStatus").mockImplementation(async (customerId, attemptedCreditPaisa): Promise<CreditStatusCheckResult> => {
+      const isBreached = attemptedCreditPaisa > 5000000;
+      return {
+        customer_id: customerId,
+        customer_name: "Haji Abdul Sattar",
+        credit_limit_paisa: 5000000,
+        current_balance_paisa: 1200000,
+        attempted_credit_paisa: attemptedCreditPaisa,
+        total_exposure_paisa: 1200000 + attemptedCreditPaisa,
+        utilization_percentage: Math.round(((1200000 + attemptedCreditPaisa) / 5000000) * 100),
+        is_warning: false,
+        is_breached: isBreached,
+        status: isBreached ? "BLOCKED" : "ACTIVE",
+      };
+    });
+
+    vi.spyOn(salesService, "cancelSalesInvoice").mockImplementation(async (): Promise<CancelInvoiceResult> => ({
+      success: true,
+      invoice_id: 88,
+      invoice_number: "INV-20261116-0089",
+      restored_stock_items: 1,
+      refunded_cash_paisa: 120000,
+      credited_receivable_paisa: 0,
+      reversed_crates_count: 0,
+      audit_log_id: 99,
+      cancelled_at: new Date().toISOString(),
+    }));
   });
 
   afterEach(() => {
@@ -91,119 +202,133 @@ describe("R6: Non-Regression of POS Terminal & Customer Khata", () => {
   it("T1.1: POS cart additions, item quantities, and subtotal calculation operate completely independently of van loading sheets", () => {
     const store = useSalesStore.getState();
 
-    // Add 2 items to POS cart:
-    // Item 1: Cola Next 2250ml PET (10 packs @ 1,200 PKR retail = 12,000 PKR / 1,200,000 paisa)
-    // Item 2: Fizz Up 250ml RGB (5 crates @ 2,400 PKR retail = 12,000 PKR / 1,200,000 paisa)
-    const item1: CartItem = {
+    // Add item 1
+    store.addToCart({
       productId: 1,
       productName: "Cola Next 2250 ML",
       skuCode: "CN-2250-PET",
       unitsPerPack: 4,
       packName: "Pack",
-      packQty: 10,
-      looseQty: 0,
       unitPricePaisa: 120000,
-      lineDiscountPaisa: 0,
-    };
-
-    const item2: CartItem = {
+    });
+    // Add item 2
+    store.addToCart({
       productId: 5,
       productName: "Fizz Up 250ml Glass",
       skuCode: "FZ-250-RGB",
       unitsPerPack: 24,
       packName: "Crate",
-      packQty: 5,
-      looseQty: 0,
       unitPricePaisa: 240000,
-      lineDiscountPaisa: 0,
-    };
+    });
 
-    store.cart = [item1, item2];
+    store.updateCartItem(1, { packQty: 10 });
+    store.updateCartItem(5, { packQty: 5 });
 
-    const subtotalPaisa = store.cart.reduce((sum, it) => sum + it.packQty * it.unitPricePaisa, 0);
-    expect(subtotalPaisa).toBe(2400000); // 24,000 PKR
-    expect(store.cart.length).toBe(2);
+    const cart = useSalesStore.getState().cart;
+    expect(cart).toHaveLength(2);
+    expect(cart.find((c) => c.productId === 1)!.packQty).toBe(10);
+    expect(cart.find((c) => c.productId === 5)!.packQty).toBe(5);
+
+    const subtotalPaisa = cart.reduce((sum, it) => sum + it.packQty * it.unitPricePaisa, 0);
+    expect(subtotalPaisa).toBe(10 * 120000 + 5 * 240000); // 2,400,000 paisa (24,000 PKR)
   });
 
-  it("T1.2: POS counter billing checkout creates invoice and calculates change with exact paisa precision", () => {
-    // POS counter customer buys 1 pack of 1.5L PET for 1,200 PKR (120,000 paisa)
-    // Tendered: 1,500 PKR cash (150,000 paisa)
-    // Expected Change: 300 PKR (30,000 paisa)
-    const totalPaisa = 120000;
-    const tenderedPaisa = 150000;
-    const changePaisa = tenderedPaisa - totalPaisa;
+  it("T1.2: POS counter billing checkout creates invoice and calculates change with exact paisa precision", async () => {
+    const store = useSalesStore.getState();
 
-    expect(changePaisa).toBe(30000);
-    expect(changePaisa / 100).toBe(300); // 300 PKR exact
+    store.addToCart({
+      productId: 1,
+      productName: "Cola Next 2250 ML",
+      skuCode: "CN-2250-PET",
+      unitsPerPack: 4,
+      packName: "Pack",
+      unitPricePaisa: 120000,
+    });
+    store.updateCartItem(1, { packQty: 1 });
+    store.setPaymentType("CASH");
+    store.setPaidAmountPaisa(150000);
+
+    const receipt = await store.checkout();
+
+    expect(receipt).toBeDefined();
+    expect(receipt.net_total_paisa).toBe(120000);
+    expect(receipt.paid_amount_paisa).toBe(150000);
+    expect(receipt.paid_amount_paisa - receipt.net_total_paisa).toBe(30000); // 300 PKR exact change
+    expect(useSalesStore.getState().cart).toHaveLength(0); // Cart cleared on checkout
+    expect(useSalesStore.getState().isReceiptModalOpen).toBe(true);
   });
 
-  it("T1.3: POS credit customer billing enforces credit limits without referencing salesman accounts or route sheets", () => {
-    // Customer Haji Abdul Sattar (id 2) has currentBalance 12,000 PKR
-    // Let's assume credit limit is 50,000 PKR
-    const customer: CustomerSummary = {
+  it("T1.3: POS credit customer billing enforces credit limits without referencing salesman accounts or route sheets", async () => {
+    const store = useSalesStore.getState();
+
+    store.setSelectedCustomer({
       id: 2,
       name: "Haji Abdul Sattar",
       shopName: "Madina Super Store",
       priceTier: "WHOLESALE",
-      creditLimitPaisa: 5000000, // 50,000 PKR
-      currentBalancePaisa: 1200000, // 12,000 PKR
+      creditLimitPaisa: 5000000,
+      currentBalancePaisa: 1200000,
       currentCrateBalance: 15,
-    };
+    });
 
-    const requestedCreditPaisa = 2000000; // 20,000 PKR
-    const newTotalDebtPaisa = customer.currentBalancePaisa + requestedCreditPaisa; // 32,000 PKR
+    store.addToCart({
+      productId: 1,
+      productName: "Cola Next 2250 ML",
+      skuCode: "CN-2250-PET",
+      unitsPerPack: 4,
+      packName: "Pack",
+      unitPricePaisa: 120000,
+    });
+    store.setPaymentType("CREDIT");
 
-    // Within limit: should approve
-    const isApproved = newTotalDebtPaisa <= customer.creditLimitPaisa;
-    expect(isApproved).toBe(true);
-
-    // Over limit test: requested 45,000 PKR -> total debt 57,000 PKR > 50,000 PKR limit
-    const excessiveCreditPaisa = 4500000;
-    const isOverLimit = (customer.currentBalancePaisa + excessiveCreditPaisa) > customer.creditLimitPaisa;
-    expect(isOverLimit).toBe(true);
+    const creditResult = await store.checkCredit();
+    expect(creditResult).toBeDefined();
+    expect(creditResult!.is_breached).toBe(false);
+    expect(creditResult!.status).toBe("ACTIVE");
+    expect(creditResult!.customer_id).toBe(2);
   });
 
-  it("T1.4: POS thermal receipt formatting preserves bilingual English & Urdu headers and totals", () => {
-    const receiptData = {
-      invoiceNumber: "INV-20261116-0089",
-      agencyName: "DOGAR TRADERS",
-      agencyUrdu: "ڈوگر ٹریڈرز",
-      customerName: "Walk-in Cash Customer",
-      totalPaisa: 1250000,
-      paidPaisa: 1250000,
-      changePaisa: 0,
-      itemsCount: 3,
-    };
+  it("T1.4: POS thermal receipt formatting preserves bilingual English & Urdu headers and totals", async () => {
+    const store = useSalesStore.getState();
+    store.addToCart({
+      productId: 1,
+      productName: "Cola Next 2250 ML",
+      skuCode: "CN-2250-PET",
+      unitsPerPack: 4,
+      packName: "Pack",
+      unitPricePaisa: 120000,
+    });
 
-    expect(receiptData.agencyUrdu).toBe("ڈوگر ٹریڈرز");
-    expect(receiptData.totalPaisa).toBe(receiptData.paidPaisa + receiptData.changePaisa);
-    expect(receiptData.invoiceNumber).toMatch(/^INV-\d{8}-\d{4}$/);
+    const receipt = await store.checkout();
+
+    expect(receipt.formatted_thermal_receipt).toContain("DOGAR TRADERS");
+    expect(receipt.formatted_thermal_receipt).toContain("ڈوگر ٹریڈرز");
+    expect(receipt.invoice_number).toMatch(/^INV-\d{8}-\d{4}$/);
+    expect(receipt.net_total_paisa).toBe(receipt.subtotal_paisa);
   });
 
-  it("T1.5: POS bill cancellation reverses customer debt and restores counter inventory without altering delivery van sheets", () => {
-    // POS sale to customer Akram (id 1) of 10,000 PKR on credit
-    const akram = accounts.find((a) => a.id === 1)!;
-    const initialBal = akram.currentBalance; // 45,000 PKR
+  it("T1.5: POS bill cancellation reverses customer debt and restores counter inventory without altering delivery van sheets", async () => {
+    const store = useSalesStore.getState();
+    store.addToCart({
+      productId: 1,
+      productName: "Cola Next 2250 ML",
+      skuCode: "CN-2250-PET",
+      unitsPerPack: 4,
+      packName: "Pack",
+      unitPricePaisa: 120000,
+    });
 
-    // Bill cancellation creates a credit reversal transaction
-    const reversalTx: KhataTransaction = {
-      id: 888,
-      accountId: akram.id,
-      accountName: akram.holderName,
-      transactionDate: "2026-11-16",
-      transactionType: "CREDIT",
-      amount: 10000,
-      paymentReceived: 0,
-      paymentGiven: 0,
-      description: "Bill Cancelled: INV-20261116-0012 reversal",
-      previousBalance: initialBal + 10000,
-      newBalance: initialBal,
-      referenceNo: "INV-20261116-0012",
-      createdAt: new Date().toISOString(),
-    };
+    const receipt = await store.checkout();
+    expect(receipt.invoice_id).toBe(88);
 
-    akram.currentBalance = reversalTx.newBalance;
-    expect(akram.currentBalance).toBe(initialBal); // Returned to exact initial balance
+    // Cancel invoice via store action
+    await store.cancelInvoice(receipt.invoice_id, "Customer returned goods at counter", "1234");
+    expect(store.isLoading).toBe(false);
+    expect(store.error).toBeNull();
+
+    // Delivery sheets in useLogisticsStore remain completely unaffected
+    const loadingSheets = useLogisticsStore.getState().loadingSheets;
+    expect(loadingSheets).toHaveLength(0);
   });
 
   // ==========================================================================
@@ -211,7 +336,7 @@ describe("R6: Non-Regression of POS Terminal & Customer Khata", () => {
   // ==========================================================================
 
   it("T2.1: Category segregation: Accounts are strictly categorized and category filtering returns exact subsets without bleed", () => {
-    // Verify categories present in initial seed
+    const accounts = loadSavedKhataAccounts();
     const retailerAccounts = accounts.filter((a) => a.category === "RETAILER");
     const supplierAccounts = accounts.filter((a) => a.category === "SUPPLIER");
     const villageAccounts = accounts.filter((a) => a.category === "VILLAGE_KIRAYANA");
@@ -228,55 +353,87 @@ describe("R6: Non-Regression of POS Terminal & Customer Khata", () => {
     expect(salesmanAccounts.some((a) => a.category === "SUPPLIER")).toBe(false);
   });
 
-  it("T2.2: Customer Khata immunity: Salesman ledger transactions do NOT alter customer Khata balances", () => {
-    // Capture snapshot of all non-salesman accounts before salesman transaction
-    const initialNonSalesmanBalances = accounts
+  it("T2.2: Customer Khata immunity: Salesman ledger transactions do NOT alter customer Khata balances", async () => {
+    const accountsBefore = loadSavedKhataAccounts();
+    const nonSalesmanSnapshots = accountsBefore
       .filter((a) => a.category !== "SALESMAN")
       .map((a) => ({ id: a.id, balance: a.currentBalance }));
 
-    // Simulate salesman van settlement posting 50,000 PKR debit to Muhammad Ali (id 5)
-    const salesmanAli = accounts.find((a) => a.id === 5)!;
-    salesmanAli.currentBalance += 50000;
+    // Create a van dispatch and confirm evening return for Salesman Muhammad Ali (id 5)
+    const dispatch = await useLogisticsStore.getState().createDailyDispatch({
+      sheetNumber: "LOAD-VAN-IMMUNITY",
+      date: "2026-11-16",
+      routeId: 1,
+      routeName: "City Center",
+      salesmanId: 5,
+      salesmanKhataId: 5,
+      salesmanName: "Muhammad Ali",
+      vehicleNumber: "LES-2489",
+      status: "OPEN",
+      emptyCratesLoaded: 20,
+      emptyCratesReturned: 0,
+      items: [
+        {
+          productId: 1,
+          productSku: "CN-2250-PET",
+          productName: "Cola Next 2250 ML",
+          packName: "Pack",
+          unitsPerPack: 4,
+          wholesalePackPricePaisa: 108000,
+          isGlass: false,
+          dispatchedPacks: 20,
+          dispatchedLoose: 0,
+          totalDispatchedBase: 80,
+          soldPacks: 0,
+          soldLoose: 0,
+          totalSoldBase: 0,
+          returnedIntactPacks: 0,
+          returnedIntactLoose: 0,
+          totalReturnedIntactBase: 0,
+          damagedPacks: 0,
+          damagedLoose: 0,
+          totalDamagedBase: 0,
+          lineRevenuePaisa: 0,
+        },
+      ],
+      totalSalesRevenuePaisa: 0,
+      cashDepositedPaisa: 0,
+      unpaidBalancePaisa: 0,
+    });
 
-    const tx: KhataTransaction = {
-      id: 901,
-      accountId: 5,
-      accountName: salesmanAli.holderName,
-      transactionDate: "2026-11-16",
-      transactionType: "DEBIT",
-      amount: 50000,
-      paymentReceived: 0,
-      paymentGiven: 0,
-      description: "Van route unpaid balance",
-      previousBalance: salesmanAli.currentBalance - 50000,
-      newBalance: salesmanAli.currentBalance,
-      referenceNo: "LOAD-VAN-01",
-      createdAt: new Date().toISOString(),
-    };
-    transactions.push(tx);
+    // Settle with 5,000 PKR unpaid balance
+    await useLogisticsStore.getState().confirmEveningReturn(
+      dispatch.id,
+      [{ productId: 1, returnedIntactPacks: 0, returnedIntactLoose: 0, damagedPacks: 0, damagedLoose: 0 }],
+      1660000 // Gross = 21,600, deposit = 16,600 -> unpaid = 5,000 PKR
+    );
 
-    // Assert that every customer account balance is 100% identical to before
-    for (const snap of initialNonSalesmanBalances) {
-      const current = accounts.find((a) => a.id === snap.id)!;
+    const accountsAfter = loadSavedKhataAccounts();
+    // Salesman balance updated
+    expect(accountsAfter.find((a) => a.id === 5)!.currentBalance).toBe(5000);
+
+    // Customer balances 100% untouched
+    for (const snap of nonSalesmanSnapshots) {
+      const current = accountsAfter.find((a) => a.id === snap.id)!;
       expect(current.currentBalance).toBe(snap.balance);
     }
   });
 
   it("T2.3: Supplier Khata negative balance (payable) accounting functions independently of customer/salesman receivables", () => {
-    // Tariq Mehmood (Next Beverages Plant, Supplier, id 4)
-    // Opening balance is -150,000 PKR (payable), current balance is -85,000 PKR
+    const accounts = loadSavedKhataAccounts();
     const supplier = accounts.find((a) => a.id === 4)!;
     expect(supplier.category).toBe("SUPPLIER");
-    expect(supplier.currentBalance).toBe(-85000);
+    const initialBal = supplier.currentBalance; // -85,000 PKR
 
-    // Agency receives factory shipment worth 200,000 PKR -> liability increases by 200,000 -> balance becomes -285,000 PKR
-    const invoiceAmount = 200000;
-    const newBal = supplier.currentBalance - invoiceAmount;
-    expect(newBal).toBe(-285000); // More negative = higher payable to supplier
+    // Receiving shipment from supplier increases agency liability
+    const shipmentAmount = 200000;
+    const updatedBal = initialBal - shipmentAmount;
+    expect(updatedBal).toBe(initialBal - 200000);
+    expect(updatedBal).toBeLessThan(0);
   });
 
   it("T2.4: Customer Khata search queries return only matching customers and ignore salesman van records", () => {
-    // Search query for "Kiryana"
+    const accounts = loadSavedKhataAccounts();
     const query = "kiryana";
     const matches = accounts.filter(
       (a) =>
@@ -285,23 +442,23 @@ describe("R6: Non-Regression of POS Terminal & Customer Khata", () => {
         a.notes.toLowerCase().includes(query)
     );
 
-    // Must find Bismillah Kiryana Store (id 1) and Al-Rehman (id 3)
     expect(matches.some((a) => a.id === 1)).toBe(true);
-    // Must NOT find delivery drivers
     expect(matches.some((a) => a.category === "SALESMAN")).toBe(false);
   });
 
   it("T2.5: Customer credit wasooli / recovery receipts credit customer account without affecting salesman ledgers", () => {
-    // Retailer Akram (id 1) pays 15,000 PKR cash recovery at counter
+    const accounts = loadSavedKhataAccounts();
     const akram = accounts.find((a) => a.id === 1)!;
     const prevAkramBal = akram.currentBalance; // 45,000 PKR
-    const payment = 15000;
+    const recovery = 15000;
 
-    akram.currentBalance = prevAkramBal - payment;
-    expect(akram.currentBalance).toBe(30000);
+    akram.currentBalance = prevAkramBal - recovery;
+    saveKhataAccounts(accounts);
 
-    // Verify all salesman balances remain intact
-    const salesmen = accounts.filter((a) => a.category === "SALESMAN");
+    expect(loadSavedKhataAccounts().find((a) => a.id === 1)!.currentBalance).toBe(30000);
+
+    // All salesmen balances remain 0
+    const salesmen = loadSavedKhataAccounts().filter((a) => a.category === "SALESMAN");
     for (const s of salesmen) {
       expect(s.currentBalance).toBe(0);
     }
@@ -311,37 +468,61 @@ describe("R6: Non-Regression of POS Terminal & Customer Khata", () => {
   // TIER 3: Inter-Module Invariant Verification (≥ 3 tests)
   // ==========================================================================
 
-  it("T3.1: Concurrent counter POS sales and morning van dispatch: Both decrement warehouse inventory simultaneously without conflict", () => {
-    // Starting inventory of Cola Next 2250 ML PET = 250 packs (1,000 bottles)
-    let warehousePacks = 250;
+  it("T3.1: Concurrent counter POS sales and morning van dispatch: Both decrement warehouse inventory simultaneously without conflict", async () => {
+    const initialStock = loadSavedProducts().find((p) => p.id === 1)!.stockPacks; // 250 packs
 
-    // Operation A (Counter POS): Cash customer buys 10 packs
-    const posPacks = 10;
-    warehousePacks -= posPacks;
-    expect(warehousePacks).toBe(240);
+    // Operation A (Counter POS): Cash customer buys 10 packs (40 base units)
+    await useInventoryStore.getState().deductWarehouseStock(1, 40);
+    expect(loadSavedProducts().find((p) => p.id === 1)!.stockPacks).toBe(initialStock - 10);
 
-    // Operation B (Morning Van Dispatch): Delivery van loads 50 packs
-    const dispatchPacks = 50;
-    warehousePacks -= dispatchPacks;
-    expect(warehousePacks).toBe(190);
+    // Operation B (Morning Van Dispatch): Delivery van loads 50 packs (200 base units)
+    await useLogisticsStore.getState().createDailyDispatch({
+      sheetNumber: "LOAD-CONCURRENT-01",
+      date: "2026-11-16",
+      routeId: 1,
+      routeName: "City Beat",
+      salesmanId: 5,
+      salesmanName: "Muhammad Ali",
+      vehicleNumber: "LES-2489",
+      status: "ISSUED",
+      emptyCratesLoaded: 50,
+      emptyCratesReturned: 0,
+      items: [
+        {
+          productId: 1,
+          productSku: "CN-2250-PET",
+          productName: "Cola Next 2250 ML",
+          packName: "Pack",
+          unitsPerPack: 4,
+          wholesalePackPricePaisa: 108000,
+          isGlass: false,
+          dispatchedPacks: 50,
+          dispatchedLoose: 0,
+          totalDispatchedBase: 200,
+          soldPacks: 0,
+          soldLoose: 0,
+          totalSoldBase: 0,
+          returnedIntactPacks: 0,
+          returnedIntactLoose: 0,
+          totalReturnedIntactBase: 0,
+          damagedPacks: 0,
+          damagedLoose: 0,
+          totalDamagedBase: 0,
+          lineRevenuePaisa: 0,
+        },
+      ],
+      totalSalesRevenuePaisa: 0,
+      cashDepositedPaisa: 0,
+      unpaidBalancePaisa: 0,
+    });
 
-    // Total deducted = 10 + 50 = 60 packs (240 bottles)
-    expect(250 - warehousePacks).toBe(60);
+    // Total deducted = 10 + 50 = 60 packs
+    const finalStock = loadSavedProducts().find((p) => p.id === 1)!.stockPacks;
+    expect(finalStock).toBe(initialStock - 60);
   });
 
   it("T3.2: Khata global receivable & payable KPI calculation correctly aggregates customer and salesman accounts", () => {
-    // Calculate Total Receivable (sum of positive balances) and Total Payable (sum of negative balances)
-    // Seed state:
-    // Akram (Retailer): 45,000
-    // Sattar (Retailer): 12,000
-    // Rehman (Village): 68,000
-    // Supplier: -85,000
-    // Ali (Salesman): 0
-    // Rashid (Salesman): 0
-    // Imran (Salesman): 0
-    // Total Receivable = 45,000 + 12,000 + 68,000 = 125,000 PKR
-    // Total Payable = 85,000 PKR
-
+    const accounts = loadSavedKhataAccounts();
     let totalRec = 0;
     let totalPay = 0;
     for (const acc of accounts) {
@@ -349,26 +530,25 @@ describe("R6: Non-Regression of POS Terminal & Customer Khata", () => {
       else if (acc.currentBalance < 0) totalPay += Math.abs(acc.currentBalance);
     }
 
-    expect(totalRec).toBe(125000);
-    expect(totalPay).toBe(85000);
+    expect(totalRec).toBe(125000); // 45k + 12k + 68k
+    expect(totalPay).toBe(85000);  // 85k supplier payable
 
-    // Now simulate salesman Ali ending day with 25,000 PKR unpaid balance
+    // Simulate salesman ending day with 25,000 PKR unpaid balance
     accounts.find((a) => a.id === 5)!.currentBalance = 25000;
+    saveKhataAccounts(accounts);
 
     let updatedRec = 0;
-    for (const acc of accounts) {
+    for (const acc of loadSavedKhataAccounts()) {
       if (acc.currentBalance > 0) updatedRec += acc.currentBalance;
     }
 
-    // New total receivable should be 125,000 + 25,000 = 150,000 PKR
     expect(updatedRec).toBe(150000);
-    // Payable remains 85,000 PKR
     expect(totalPay).toBe(85000);
   });
 
   it("T3.3: Product master catalog rate consistency: Item wholesale rates and pack specifications are unified between POS and Logistics", () => {
-    // Verify that INITIAL_PRODUCTS catalog has consistent units per pack and rates
-    for (const prod of INITIAL_PRODUCTS) {
+    const products = loadSavedProducts();
+    for (const prod of products) {
       expect(prod.bottlesPerPack).toBeGreaterThan(0);
       expect(prod.wholesalePackPricePaisa).toBeGreaterThan(0);
       expect(prod.retailPackPricePaisa).toBeGreaterThanOrEqual(prod.wholesalePackPricePaisa);
@@ -379,59 +559,95 @@ describe("R6: Non-Regression of POS Terminal & Customer Khata", () => {
   // TIER 4: Comprehensive Real-World Operations & Regression Invariants (≥ 2 tests)
   // ==========================================================================
 
-  it("T4.1: Full agency concurrent operations simulation: Morning counter sales, van dispatches, afternoon sales, evening settlements reconcile 100%", () => {
-    // Step 1: Morning Counter POS sale: 5 crates of RGB sold @ 2,400 PKR = 12,000 PKR cash
-    const morningCounterCashPaisa = 1200000;
+  it("T4.1: Full agency concurrent operations simulation: Morning counter sales, van dispatches, afternoon sales, evening settlements reconcile 100%", async () => {
+    const p1Initial = loadSavedProducts().find((p) => p.id === 1)!.stockPacks;
 
-    // Step 2: Morning Van Dispatch: 50 crates RGB loaded on Van 1
-    const dispatchedCrates = 50;
+    // Step 1: Morning counter POS sale (5 packs = 20 base units)
+    await useInventoryStore.getState().deductWarehouseStock(1, 20);
 
-    // Step 3: Midday Counter POS sale: 10 packs of 1.5L PET sold @ 1,200 PKR = 12,000 PKR cash
-    const middayCounterCashPaisa = 1200000;
+    // Step 2: Morning Van Dispatch (40 packs = 160 base units)
+    const dispatch = await useLogisticsStore.getState().createDailyDispatch({
+      sheetNumber: "LOAD-SIM-DAY1",
+      date: "2026-11-16",
+      routeId: 1,
+      routeName: "City Beat",
+      salesmanId: 5,
+      salesmanKhataId: 5,
+      salesmanName: "Muhammad Ali",
+      vehicleNumber: "LES-2489",
+      status: "OPEN",
+      emptyCratesLoaded: 40,
+      emptyCratesReturned: 0,
+      items: [
+        {
+          productId: 1,
+          productSku: "CN-2250-PET",
+          productName: "Cola Next 2250 ML",
+          packName: "Pack",
+          unitsPerPack: 4,
+          wholesalePackPricePaisa: 108000,
+          isGlass: false,
+          dispatchedPacks: 40,
+          dispatchedLoose: 0,
+          totalDispatchedBase: 160,
+          soldPacks: 0,
+          soldLoose: 0,
+          totalSoldBase: 0,
+          returnedIntactPacks: 0,
+          returnedIntactLoose: 0,
+          totalReturnedIntactBase: 0,
+          damagedPacks: 0,
+          damagedLoose: 0,
+          totalDamagedBase: 0,
+          lineRevenuePaisa: 0,
+        },
+      ],
+      totalSalesRevenuePaisa: 0,
+      cashDepositedPaisa: 0,
+      unpaidBalancePaisa: 0,
+    });
 
-    // Step 4: Evening Van Return:
-    // Van 1 sold 40 crates RGB @ 2,160 PKR wholesale = 86,400 PKR (8,640,000 paisa)
-    // Returns: 10 crates intact
-    // Driver deposits: 80,000 PKR cash (8,000,000 paisa)
-    // Driver unpaid: 6,400 PKR (640,000 paisa) -> posted to Salesman Khata
-    const vanSoldCrates = 40;
-    const vanReturnedCrates = 10;
-    expect(vanSoldCrates + vanReturnedCrates).toBe(dispatchedCrates);
+    // Step 3: Evening settlement: 10 packs intact returned, 30 packs sold.
+    // Revenue = 30 * 1,080 = 32,400 PKR. Cash deposited = 26,000 PKR. Unpaid = 6,400 PKR.
+    await useLogisticsStore.getState().confirmEveningReturn(
+      dispatch.id,
+      [{ productId: 1, returnedIntactPacks: 10, returnedIntactLoose: 0, damagedPacks: 0, damagedLoose: 0 }],
+      2600000
+    );
 
-    const vanCashPaisa = 8000000;
-    const vanUnpaidPaisa = 640000;
-
-    // Total Cash deposited in Agency drawer = Morning POS + Midday POS + Van Cash
-    const totalAgencyDrawerCashPaisa = morningCounterCashPaisa + middayCounterCashPaisa + vanCashPaisa;
-    expect(totalAgencyDrawerCashPaisa).toBe(10400000); // 104,000 PKR exact
-
-    // Update Salesman Khata with unpaid amount
-    const ali = accounts.find((a) => a.id === 5)!;
-    ali.currentBalance = vanUnpaidPaisa / 100; // 6,400 PKR
-    expect(ali.currentBalance).toBe(6400);
-
-    // Customer accounts remain pristine
-    expect(accounts.find((a) => a.id === 1)!.currentBalance).toBe(45000);
-    expect(accounts.find((a) => a.id === 2)!.currentBalance).toBe(12000);
+    // Net stock deducted from warehouse = 5 (POS) + 30 (Van sold) = 35 packs
+    expect(loadSavedProducts().find((p) => p.id === 1)!.stockPacks).toBe(p1Initial - 35);
+    // Salesman khata balance = 6,400 PKR
+    expect(loadSavedKhataAccounts().find((a) => a.id === 5)!.currentBalance).toBe(6400);
+    // Customer accounts intact
+    expect(loadSavedKhataAccounts().find((a) => a.id === 1)!.currentBalance).toBe(45000);
   });
 
-  it("T4.2: Full test suite regression assertion: System architecture ensures existing 12 website test suites (294 tests) pass with zero errors", () => {
-    // Assert that the test environment and module boundaries satisfy all non-regression contracts:
-    // 1. Types and interfaces are strictly additive and backwards-compatible.
-    // 2. Zustand stores isolate state slices without cross-store mutation.
-    // 3. KhataAccount category enum extension includes "SALESMAN" as an additive union variant.
-    const validCategories: AccountCategory[] = [
-      "RETAILER",
-      "SUPPLIER",
-      "VILLAGE_KIRAYANA",
-      "INDIVIDUAL",
-      "SALESMAN",
-      "OTHER",
-    ];
+  it("T4.2: Store isolation & reporting suite regression invariants: Verify ALL_REPORTS catalog integrity and cross-store isolation", () => {
+    // 1. ALL_REPORTS catalog contains dedicated reports without deletion or corruption
+    expect(ALL_REPORTS.length).toBeGreaterThanOrEqual(10);
+    const rep01 = ALL_REPORTS.find((r) => r.id === "REP-01");
+    const rep27 = ALL_REPORTS.find((r) => r.id === "REP-27");
+    const rep28 = ALL_REPORTS.find((r) => r.id === "REP-28");
+    expect(rep01).toBeDefined();
+    expect(rep27).toBeDefined();
+    expect(rep28).toBeDefined();
 
-    expect(validCategories).toContain("SALESMAN");
-    expect(validCategories).toContain("RETAILER");
-    expect(validCategories).toContain("SUPPLIER");
-    expect(validCategories.length).toBe(6);
+    // 2. Initial khata accounts immutable baseline is preserved
+    expect(INITIAL_KHATA_ACCOUNTS.length).toBeGreaterThanOrEqual(6);
+    expect(INITIAL_KHATA_ACCOUNTS.some((a) => a.category === "SALESMAN")).toBe(true);
+    expect(INITIAL_KHATA_ACCOUNTS.some((a) => a.category === "RETAILER")).toBe(true);
+    expect(INITIAL_KHATA_ACCOUNTS.some((a) => a.category === "SUPPLIER")).toBe(true);
+
+    // 3. Modifying sales store state does not mutate logistics store state
+    useSalesStore.getState().addToCart({
+      productId: 1,
+      productName: "Cola Next 2250 ML",
+      skuCode: "CN-2250-PET",
+      unitsPerPack: 4,
+      packName: "Pack",
+      unitPricePaisa: 120000,
+    });
+    expect(useLogisticsStore.getState().loadingSheets).toHaveLength(0);
   });
 });

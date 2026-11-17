@@ -7,31 +7,49 @@ import {
   Printer,
   FileCheck,
   Search,
+  Edit2,
 } from "lucide-react";
+import { EditDeliverySheetModal } from "./EditDeliverySheetModal";
+import { LoadingSheetSummaryDto, DailyDispatchRecord } from "../../types/logistics";
 
 
-export function ActiveDeliverySheetsList() {
+export interface ActiveDeliverySheetsListProps {
+  initialSheets?: LoadingSheetSummaryDto[];
+}
+
+export const ActiveDeliverySheetsList: React.FC<ActiveDeliverySheetsListProps> = ({
+  initialSheets,
+} = {}) => {
+  const store = useLogisticsStore();
+  const loadingSheets = initialSheets || store.loadingSheets;
   const {
-    loadingSheets,
     openSettlementModal,
     openGatePassModal,
     issueManifestDispatch,
     fetchLoadingSheets,
-  } = useLogisticsStore();
+  } = store;
 
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [searchTerm, setSearchTerm] = useState<string>("");
+  const [editingSheet, setEditingSheet] = useState<DailyDispatchRecord | LoadingSheetSummaryDto | null>(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
   const filteredSheets = loadingSheets.filter((s) => {
     const matchesStatus =
       statusFilter === "ALL" ||
       s.status === statusFilter ||
       (statusFilter === "ISSUED" && (s.status === "ISSUED" || s.status === "DISPATCHED"));
+    const sheetNum = (s.sheet_number || (s as any).sheetNumber || "").toLowerCase();
+    const routeName = (s.route_name || (s as any).routeName || "").toLowerCase();
+    const driverName = (s.driver_name || (s as any).salesmanName || (s as any).driverName || "").toLowerCase();
+    const vehicleNum = (s.vehicle_number || (s as any).vehicleNumber || "").toLowerCase();
+    const q = searchTerm.toLowerCase();
     const matchesSearch =
-      s.sheet_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      s.route_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      s.driver_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      s.vehicle_number.toLowerCase().includes(searchTerm.toLowerCase());
+      !q ||
+      sheetNum.includes(q) ||
+      routeName.includes(q) ||
+      driverName.includes(q) ||
+      vehicleNum.includes(q);
     return matchesStatus && matchesSearch;
   });
 
@@ -107,17 +125,25 @@ export function ActiveDeliverySheetsList() {
                 const isDraft = sheet.status === "DRAFT";
                 const isSettled = sheet.status === "SETTLED" || sheet.status === "COMPLETED";
 
+                const sheetNumber = sheet.sheet_number || (sheet as any).sheetNumber || `LOAD-${sheet.id}`;
+                const routeName = sheet.route_name || (sheet as any).routeName || "Route";
+                const vehicleNumber = sheet.vehicle_number || (sheet as any).vehicleNumber || "VAN";
+                const driverName = sheet.driver_name || (sheet as any).salesmanName || "Driver";
+                const loadedVolume = sheet.total_loaded_base ?? (sheet as any).totalLoadedBase ?? 0;
+                const emptyCrates = sheet.empty_crates_loaded ?? (sheet as any).emptyCratesLoaded ?? 0;
+                const retailPaisa = sheet.total_load_retail_paisa ?? (sheet as any).totalSalesRevenuePaisa ?? 0;
+
                 return (
                   <tr key={sheet.id} className="hover:bg-slate-800/60 transition">
-                    <td className="p-3 font-bold text-cyan-300">{sheet.sheet_number}</td>
-                    <td className="p-3 font-sans font-medium text-slate-200">{sheet.route_name}</td>
-                    <td className="p-3 text-slate-300 font-bold">{sheet.vehicle_number}</td>
-                    <td className="p-3 font-sans text-slate-300">{sheet.driver_name}</td>
+                    <td className="p-3 font-bold text-cyan-300">{sheetNumber}</td>
+                    <td className="p-3 font-sans font-medium text-slate-200">{routeName}</td>
+                    <td className="p-3 text-slate-300 font-bold">{vehicleNumber}</td>
+                    <td className="p-3 font-sans text-slate-300">{driverName}</td>
                     <td className="p-3 text-right font-bold text-slate-200">
-                      {sheet.total_loaded_base} btls ({sheet.empty_crates_loaded} crates)
+                      {loadedVolume} btls ({emptyCrates} crates)
                     </td>
                     <td className="p-3 text-right font-bold text-emerald-400">
-                      {formatPkr(sheet.total_load_retail_paisa)}
+                      {formatPkr(retailPaisa)}
                     </td>
                     <td className="p-3 text-center">
                       <span
@@ -135,6 +161,21 @@ export function ActiveDeliverySheetsList() {
                     </td>
                     <td className="p-3 text-center">
                       <div className="flex items-center justify-center space-x-2">
+                        {/* Persistent Edit Record Button across ALL statuses */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingSheet(sheet);
+                            setIsEditModalOpen(true);
+                          }}
+                          className="px-2.5 py-1 bg-amber-600 hover:bg-amber-500 text-white rounded text-[11px] font-bold shadow flex items-center space-x-1 transition active:scale-95"
+                          title="Edit Record (ایڈٹ کریں)"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                          <span>Edit Record</span>
+                          <span className="text-[10px] font-normal opacity-90" dir="rtl">(ایڈٹ کریں)</span>
+                        </button>
+
                         {isDraft && (
                           <button
                             onClick={async () => {
@@ -184,6 +225,21 @@ export function ActiveDeliverySheetsList() {
           </tbody>
         </table>
       </div>
+
+      {/* Persistent Multi-Edit Modal */}
+      {isEditModalOpen && (
+        <EditDeliverySheetModal
+          isOpen={isEditModalOpen}
+          sheet={editingSheet}
+          onClose={() => {
+            setIsEditModalOpen(false);
+            setEditingSheet(null);
+          }}
+          onSuccess={() => {
+            fetchLoadingSheets();
+          }}
+        />
+      )}
     </div>
   );
 }

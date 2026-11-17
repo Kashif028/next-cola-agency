@@ -28,13 +28,39 @@ import {
   ArrowDownLeft,
 } from "lucide-react";
 
-export const KhataManagement: React.FC = () => {
-  const [accounts, setAccounts] = useState<KhataAccount[]>(() => loadSavedKhataAccounts());
-  const [transactions, setTransactions] = useState<KhataTransaction[]>(() => loadSavedKhataTransactions());
+export interface KhataManagementProps {
+  initialAccountId?: number;
+  initialCategory?: string;
+  initialAccounts?: KhataAccount[];
+  initialTransactions?: KhataTransaction[];
+}
 
-  const [selectedAccountId, setSelectedAccountId] = useState<number>(() => accounts[0]?.id || 1);
+export const KhataManagement: React.FC<KhataManagementProps> = ({
+  initialAccountId,
+  initialCategory,
+  initialAccounts,
+  initialTransactions,
+}) => {
+  const [accounts, setAccounts] = useState<KhataAccount[]>(() => initialAccounts || loadSavedKhataAccounts());
+  const [transactions, setTransactions] = useState<KhataTransaction[]>(() => initialTransactions || loadSavedKhataTransactions());
+
+  const [categoryFilter, setCategoryFilter] = useState<string>(() => initialCategory || "ALL");
+  const [selectedAccountId, setSelectedAccountId] = useState<number>(() => {
+    if (initialAccountId) return initialAccountId;
+    const accs = initialAccounts || loadSavedKhataAccounts();
+    if (initialCategory && initialCategory !== "ALL") {
+      const match = accs.find((a) => a.category === initialCategory);
+      if (match) return match.id;
+    }
+    return accs[0]?.id || 1;
+  });
   const [searchQuery, setSearchQuery] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState<string>("ALL");
+
+  // Re-sync on mount if no static initial props passed
+  React.useEffect(() => {
+    if (!initialAccounts) setAccounts(loadSavedKhataAccounts());
+    if (!initialTransactions) setTransactions(loadSavedKhataTransactions());
+  }, [initialAccounts, initialTransactions]);
 
   // Modals state
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
@@ -62,11 +88,6 @@ export const KhataManagement: React.FC = () => {
   const [accCategory, setAccCategory] = useState<AccountCategory>("RETAILER");
   const [accNotes, setAccNotes] = useState("");
 
-  // Selected account
-  const currentAccount = useMemo(() => {
-    return accounts.find((a) => a.id === selectedAccountId) || accounts[0];
-  }, [accounts, selectedAccountId]);
-
   // Filtered accounts list
   const filteredAccounts = useMemo(() => {
     return accounts.filter((a) => {
@@ -83,6 +104,16 @@ export const KhataManagement: React.FC = () => {
     });
   }, [accounts, searchQuery, categoryFilter]);
 
+  // Selected account - automatically selects first match if category filter changed
+  const currentAccount = useMemo(() => {
+    if (categoryFilter !== "ALL") {
+      const matched = filteredAccounts.find((a) => a.id === selectedAccountId);
+      if (matched) return matched;
+      return filteredAccounts[0] || accounts[0];
+    }
+    return accounts.find((a) => a.id === selectedAccountId) || accounts[0];
+  }, [accounts, filteredAccounts, selectedAccountId, categoryFilter]);
+
   // Account specific transactions sorted date descending
   const accountTransactions = useMemo(() => {
     if (!currentAccount) return [];
@@ -90,6 +121,40 @@ export const KhataManagement: React.FC = () => {
       .filter((t) => t.accountId === currentAccount.id)
       .sort((a, b) => new Date(b.transactionDate).getTime() - new Date(a.transactionDate).getTime());
   }, [transactions, currentAccount]);
+
+  // Selected Account Financial Breakdown
+  const accountFinancials = useMemo(() => {
+    if (!currentAccount) {
+      return { pastBalance: 0, totalDebits: 0, totalCredits: 0, netBalance: 0 };
+    }
+    const accTxs = transactions.filter((t) => t.accountId === currentAccount.id);
+    const totalDebits = accTxs
+      .filter((t) => t.transactionType === "DEBIT")
+      .reduce((sum, t) => sum + (t.amount || 0), 0);
+    const totalCredits = accTxs
+      .filter((t) => t.transactionType === "CREDIT")
+      .reduce((sum, t) => sum + (t.amount || 0), 0);
+    const pastBalance = currentAccount.openingBalance || 0;
+    const netBalance = currentAccount.currentBalance;
+    return { pastBalance, totalDebits, totalCredits, netBalance };
+  }, [currentAccount, transactions]);
+
+  // Category counts
+  const categoryCounts = useMemo(() => {
+    const counts: Record<string, number> = {
+      ALL: accounts.length,
+      SALESMAN: 0,
+      RETAILER: 0,
+      VILLAGE_KIRAYANA: 0,
+      SUPPLIER: 0,
+      INDIVIDUAL: 0,
+      OTHER: 0,
+    };
+    for (const acc of accounts) {
+      counts[acc.category] = (counts[acc.category] || 0) + 1;
+    }
+    return counts;
+  }, [accounts]);
 
   // Global KPI Metrics
   const { totalReceivable, totalPayable } = useMemo(() => {
@@ -208,7 +273,11 @@ export const KhataManagement: React.FC = () => {
   const handleOpenAddTx = (type: TransactionType) => {
     setTxType(type);
     setTxAmount("");
-    setTxDescription(type === "CREDIT" ? "Cash Wasooli / Payment Received" : "Goods Sold on Credit");
+    const defaultDesc =
+      currentAccount?.category === "SALESMAN"
+        ? (type === "CREDIT" ? "Salesman cash recovery payment (کیش ریکوری)" : "Trip deficit / van balance debit")
+        : (type === "CREDIT" ? "Cash Wasooli / Payment Received" : "Goods Sold on Credit");
+    setTxDescription(defaultDesc);
     setTxDate(new Date().toISOString().slice(0, 10));
     setTxRef(`REF-${Date.now().toString().slice(-5)}`);
     setIsTxModalOpen(true);
@@ -235,7 +304,11 @@ export const KhataManagement: React.FC = () => {
       amount: amountVal,
       paymentReceived: txType === "CREDIT" && currentAccount.category !== "SUPPLIER" ? amountVal : 0,
       paymentGiven: txType === "CREDIT" && currentAccount.category === "SUPPLIER" ? amountVal : 0,
-      description: txDescription.trim() || (txType === "DEBIT" ? "Goods Debit" : "Payment Received"),
+      description:
+        txDescription.trim() ||
+        (currentAccount.category === "SALESMAN"
+          ? (txType === "CREDIT" ? "Salesman cash recovery payment" : "Trip route debit")
+          : (txType === "DEBIT" ? "Goods Debit" : "Payment Received")),
       previousBalance: prevBal,
       newBalance: newBal,
       referenceNo: txRef.trim(),
@@ -247,7 +320,9 @@ export const KhataManagement: React.FC = () => {
     saveKhataTransactions(updatedTxList);
 
     // Update account balance
-    const updatedAccounts = accounts.map((a) => (a.id === currentAccount.id ? { ...a, currentBalance: newBal } : a));
+    const updatedAccounts = accounts.map((a) =>
+      a.id === currentAccount.id ? { ...a, currentBalance: newBal, updatedAt: new Date().toISOString() } : a
+    );
     setAccounts(updatedAccounts);
     saveKhataAccounts(updatedAccounts);
 
@@ -319,8 +394,23 @@ export const KhataManagement: React.FC = () => {
               className="inline-flex items-center space-x-1.5 px-3.5 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-semibold shadow-sm transition active:scale-95 disabled:opacity-50"
             >
               <ArrowDownLeft className="w-4 h-4 text-sky-200" />
-              <span>Record Wasooli (وصولی)</span>
+              <span>
+                {currentAccount?.category === "SALESMAN"
+                  ? "Record Recovery (ادائیگی وصول کریں)"
+                  : "Record Wasooli (وصولی)"}
+              </span>
             </button>
+
+            {currentAccount?.category === "SALESMAN" && (
+              <button
+                type="button"
+                onClick={() => handleOpenAddTx("CREDIT")}
+                className="inline-flex items-center space-x-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm transition active:scale-95"
+              >
+                <DollarSign className="w-4 h-4 text-emerald-200" />
+                <span>نیا لین دین (ادائیگی وصول کریں)</span>
+              </button>
+            )}
 
             <button
               type="button"
@@ -410,18 +500,36 @@ export const KhataManagement: React.FC = () => {
             />
           </div>
 
-          {/* Filter Pill Tabs */}
+          {/* Filter Pill Tabs with Badges */}
           <div className="flex space-x-1 overflow-x-auto text-[11px] pb-1">
-            {["ALL", "RETAILER", "VILLAGE_KIRAYANA", "SUPPLIER"].map((cat) => (
+            {[
+              { key: "ALL", label: "All Accounts", urdu: "تمام" },
+              { key: "SALESMAN", label: "Salesman", urdu: "سیلز مین" },
+              { key: "RETAILER", label: "Retailer", urdu: "شاپ کیپر" },
+              { key: "VILLAGE_KIRAYANA", label: "Village Kiryana", urdu: "دیہاتی دکان" },
+              { key: "SUPPLIER", label: "Supplier", urdu: "سپلائر" },
+              { key: "INDIVIDUAL", label: "Individual", urdu: "فرد" },
+              { key: "OTHER", label: "Other", urdu: "دیگر" },
+            ].map((cat) => (
               <button
-                key={cat}
+                key={cat.key}
                 type="button"
-                onClick={() => setCategoryFilter(cat)}
-                className={`px-2.5 py-1 rounded-lg font-medium whitespace-nowrap transition ${
-                  categoryFilter === cat ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                onClick={() => setCategoryFilter(cat.key)}
+                className={`px-2.5 py-1 rounded-lg font-medium whitespace-nowrap transition flex items-center space-x-1 ${
+                  categoryFilter === cat.key
+                    ? "bg-slate-900 text-white shadow-sm"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                 }`}
               >
-                {cat === "ALL" ? "All Accounts" : cat.replace("_", " ")}
+                <span>{cat.label}</span>
+                <span className="text-[10px] opacity-75 font-serif" dir="rtl">({cat.urdu})</span>
+                <span
+                  className={`ml-1 px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold ${
+                    categoryFilter === cat.key ? "bg-white/20 text-white" : "bg-slate-200 text-slate-700"
+                  }`}
+                >
+                  {categoryCounts[cat.key] || 0}
+                </span>
               </button>
             ))}
           </div>
@@ -528,10 +636,63 @@ export const KhataManagement: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Account Metadata Grid */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs text-slate-600">
+                {/* Special Salesman Account Notice Banner */}
+                {currentAccount.category === "SALESMAN" && (
+                  <div className="bg-sky-50 border border-sky-200 rounded-xl p-3 flex items-center justify-between text-xs">
+                    <div className="flex items-center space-x-2 text-sky-900 font-semibold">
+                      <Users className="w-4 h-4 text-sky-600" />
+                      <span>Salesman Van Delivery Ledger — Linked with Morning Loading & Evening Settlements</span>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-sky-200 text-sky-800" dir="rtl">
+                        سیلز مین کھاتہ
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-sky-700 font-mono">Beat Route Account #{currentAccount.id}</span>
+                  </div>
+                )}
+
+                {/* Account Financials & Balance Summary Ribbon */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                  <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl space-y-0.5">
+                    <span className="text-[10px] uppercase font-bold text-slate-400 block">Past / Opening Balance</span>
+                    <div className="font-mono font-bold text-slate-800 text-sm">
+                      ₨ {accountFinancials.pastBalance.toLocaleString()}
+                    </div>
+                    <span className="text-[10px] text-slate-400 font-serif" dir="rtl">سابقہ بقایا</span>
+                  </div>
+
+                  <div className="bg-amber-50/70 border border-amber-200/70 p-3 rounded-xl space-y-0.5">
+                    <span className="text-[10px] uppercase font-bold text-amber-700 block">Total Debits</span>
+                    <div className="font-mono font-bold text-amber-900 text-sm">
+                      ₨ {accountFinancials.totalDebits.toLocaleString()}
+                    </div>
+                    <span className="text-[10px] text-amber-600 font-serif" dir="rtl">کل بنام / ترسیل مال</span>
+                  </div>
+
+                  <div className="bg-emerald-50/70 border border-emerald-200/70 p-3 rounded-xl space-y-0.5">
+                    <span className="text-[10px] uppercase font-bold text-emerald-700 block">Total Credits / Recovery</span>
+                    <div className="font-mono font-bold text-emerald-900 text-sm">
+                      ₨ {accountFinancials.totalCredits.toLocaleString()}
+                    </div>
+                    <span className="text-[10px] text-emerald-600 font-serif" dir="rtl">کل جمع / وصولی</span>
+                  </div>
+
+                  <div className="bg-sky-50 border border-sky-200 p-3 rounded-xl space-y-0.5">
+                    <span className="text-[10px] uppercase font-bold text-sky-800 block">Net Outstanding Balance</span>
+                    <div
+                      className={`font-mono font-bold text-base ${
+                        accountFinancials.netBalance > 0 ? "text-sky-900" : "text-emerald-900"
+                      }`}
+                    >
+                      ₨ {accountFinancials.netBalance.toLocaleString()}
+                    </div>
+                    <span className="text-[10px] text-sky-700 font-serif" dir="rtl">خالص واجب الادا بقایا</span>
+                  </div>
+                </div>
+
+                {/* Account Metadata Details */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs text-slate-600 pt-1">
                   <div className="space-y-0.5">
-                    <span className="text-[10px] uppercase font-bold text-slate-400">Village / Town</span>
+                    <span className="text-[10px] uppercase font-bold text-slate-400">Village / Town / Route</span>
                     <div className="font-medium text-slate-800">{currentAccount.villageName || "Not provided"}</div>
                   </div>
                   <div className="space-y-0.5">
@@ -539,20 +700,8 @@ export const KhataManagement: React.FC = () => {
                     <div className="font-medium text-slate-800">{currentAccount.mobileNumber || "Not provided"}</div>
                   </div>
                   <div className="space-y-0.5">
-                    <span className="text-[10px] uppercase font-bold text-slate-400">Opening Balance</span>
-                    <div className="font-mono font-medium text-slate-800">
-                      ₨ {currentAccount.openingBalance.toLocaleString()}
-                    </div>
-                  </div>
-                  <div className="space-y-0.5">
-                    <span className="text-[10px] uppercase font-bold text-slate-400">Current Balance</span>
-                    <div
-                      className={`font-mono font-bold text-sm ${
-                        currentAccount.currentBalance > 0 ? "text-sky-700" : "text-emerald-700"
-                      }`}
-                    >
-                      ₨ {currentAccount.currentBalance.toLocaleString()}
-                    </div>
+                    <span className="text-[10px] uppercase font-bold text-slate-400">Account Opening Date</span>
+                    <div className="font-mono text-slate-700">{currentAccount.accountOpeningDate}</div>
                   </div>
                 </div>
 
@@ -562,6 +711,31 @@ export const KhataManagement: React.FC = () => {
                     <span>{currentAccount.shopAddress} {currentAccount.streetArea ? `, ${currentAccount.streetArea}` : ""}</span>
                   </div>
                 )}
+
+                {/* Quick Transaction Action Buttons */}
+                <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => handleOpenAddTx("CREDIT")}
+                    className="inline-flex items-center space-x-1.5 px-3.5 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-bold shadow-sm transition active:scale-95"
+                  >
+                    <ArrowDownLeft className="w-3.5 h-3.5 text-sky-200" />
+                    <span>
+                      {currentAccount.category === "SALESMAN"
+                        ? "Record Recovery (ادائیگی وصول کریں / نیا لین دین)"
+                        : "Record Wasooli (رقم وصولی)"}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleOpenAddTx("DEBIT")}
+                    className="inline-flex items-center space-x-1.5 px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold border border-slate-200 transition active:scale-95"
+                  >
+                    <ArrowUpRight className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Add Debit / Bill (بنام اندراج)</span>
+                  </button>
+                </div>
               </div>
 
               {/* Transactions Ledger Table */}
@@ -707,6 +881,7 @@ export const KhataManagement: React.FC = () => {
                     className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-slate-800 outline-none focus:border-emerald-500"
                   >
                     <option value="RETAILER">Retailer (شاپ کیپر)</option>
+                    <option value="SALESMAN">Salesman (سیلز مین)</option>
                     <option value="VILLAGE_KIRAYANA">Village Kiryana (دیہاتی دکان)</option>
                     <option value="SUPPLIER">Factory / Supplier (سپلائر)</option>
                     <option value="INDIVIDUAL">Individual / Staff (فرد)</option>

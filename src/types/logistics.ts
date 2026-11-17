@@ -399,10 +399,10 @@ export interface RecalibrateSheetItemPayload {
 }
 
 export interface RecalibrateSheetPayload {
-  sheetId: number;
+  sheetId: number | string;
   items: RecalibrateSheetItemPayload[];
-  cashDepositedPaisa: number;
+  cashDepositedPaisa?: number;
   notes?: string;
-  status?: "OPEN" | "ISSUED" | "SETTLED" | "FINALIZED";
+  status?: "DRAFT" | "OPEN" | "ISSUED" | "SETTLED" | "FINALIZED";
   salesmanKhataId?: number;
 }

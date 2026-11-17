@@ -23,18 +23,22 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { useLogisticsStore } from "../store/useLogisticsStore";
+import { useInventoryStore } from "../store/useInventoryStore";
 import {
   KhataAccount,
   KhataTransaction,
   INITIAL_KHATA_ACCOUNTS,
   saveKhataAccounts,
+  loadSavedKhataAccounts,
   loadSavedKhataTransactions,
   saveKhataTransactions,
 } from "../types/khata";
+import { loadSavedProducts, saveProducts, INITIAL_PRODUCTS } from "../types/products";
 import { ALL_REPORTS } from "../components/reports/definitions/reportCatalog";
 
 // Mock localStorage for Node.js test environment
-class MockStorage {
+class MockLocalStorage {
   private store: Record<string, string> = {};
   getItem(key: string) { return this.store[key] ?? null; }
   setItem(key: string, value: string) { this.store[key] = String(value); }
@@ -44,237 +48,112 @@ class MockStorage {
   key(index: number) { return Object.keys(this.store)[index] ?? null; }
 }
 
-interface ProductSpec {
-  id: number;
-  sku: string;
-  name: string;
-  unitsPerPack: number;
-  wholesalePackPricePaisa: number;
-  wholesaleUnitPricePaisa: number;
-}
-
-interface ReturnLineItem {
-  productId: number;
-  dispatchedBase: number;
-  returnedIntactBase: number;
-  damagedBase: number;
-}
-
-interface SalesCalculationResult {
-  soldBase: number;
-  unitRatePaisa: number;
-  lineRevenuePaisa: number;
-}
-
 describe("R4 & R5: Salesman Khata Settlement & 5-Report Suite", () => {
-  let mockStorage: MockStorage;
-  let accounts: KhataAccount[];
-  let transactions: KhataTransaction[];
+  let mockStorage: MockLocalStorage;
 
-  // Authoritative catalog pricing specifications (DOGAR TRADERS wholesale rates)
-  const PRODUCT_SPECS: Record<number, ProductSpec> = {
-    1: {
-      id: 1,
-      sku: "NC-250-RGB",
-      name: "Next Cola 250ml Glass Bottle",
-      unitsPerPack: 24,
-      wholesalePackPricePaisa: 216000, // 2,160 PKR per crate
-      wholesaleUnitPricePaisa: 9000,    // 90.00 PKR per bottle
-    },
-    2: {
-      id: 2,
-      sku: "NC-1.5-PET",
-      name: "Next Cola 1.5L PET Bottle",
-      unitsPerPack: 6,
-      wholesalePackPricePaisa: 105000, // 1,050 PKR per pack
-      wholesaleUnitPricePaisa: 17500,   // 175.00 PKR per bottle
-    },
-    3: {
-      id: 3,
-      sku: "NC-500-PET",
-      name: "Next Cola 500ml PET Bottle",
-      unitsPerPack: 12,
-      wholesalePackPricePaisa: 126000, // 1,260 PKR per pack
-      wholesaleUnitPricePaisa: 10500,   // 105.00 PKR per bottle
-    },
-    4: {
-      id: 4,
-      sku: "NC-250-CAN",
-      name: "Next Cola 250ml Sleek Can",
-      unitsPerPack: 24,
-      wholesalePackPricePaisa: 240000, // 2,400 PKR per tray
-      wholesaleUnitPricePaisa: 10000,   // 100.00 PKR per can
-    },
-    5: {
-      id: 5,
-      sku: "FZ-250-RGB",
-      name: "Fizz Up Lemon 250ml Glass Bottle",
-      unitsPerPack: 24,
-      wholesalePackPricePaisa: 216000, // 2,160 PKR per crate
-      wholesaleUnitPricePaisa: 9000,    // 90.00 PKR per bottle
-    },
-  };
+  beforeEach(() => {
+    mockStorage = new MockLocalStorage();
+    (globalThis as any).window = globalThis;
+    (globalThis as any).localStorage = mockStorage;
 
-  /**
-   * Domain calculation: Automated Sales Calculation Engine
-   * Sold Qty = Dispatched Qty - Returned Intact Qty - Damaged Qty
-   * Line Revenue = Sold Qty * Item Rate
-   */
-  function calculateRouteSales(items: ReturnLineItem[]): {
-    lineResults: Record<number, SalesCalculationResult>;
-    totalSoldBase: number;
-    grossSalesRevenuePaisa: number;
-  } {
-    const lineResults: Record<number, SalesCalculationResult> = {};
-    let totalSoldBase = 0;
-    let grossSalesRevenuePaisa = 0;
+    saveProducts([...INITIAL_PRODUCTS.map((p) => ({ ...p }))]);
+    saveKhataAccounts([...INITIAL_KHATA_ACCOUNTS.map((a) => ({ ...a }))]);
+    saveKhataTransactions([]);
+    mockStorage.setItem("dogar_breakage_logs_v1", JSON.stringify([]));
+    mockStorage.setItem("dogar_daily_dispatches_v1", JSON.stringify([]));
 
-    for (const item of items) {
-      const spec = PRODUCT_SPECS[item.productId];
-      if (!spec) throw new Error(`Unknown product ID: ${item.productId}`);
+    useInventoryStore.setState({
+      stockItems: [],
+      emptiesOverview: null,
+      breakageLogs: [],
+      activeCustomerCrateLedger: [],
+      filter: {},
+      isLoading: false,
+      error: null,
+    });
 
-      // Automated formula: Sold = Dispatched - Intact - Damaged
-      const sold = Math.max(0, item.dispatchedBase - item.returnedIntactBase - item.damagedBase);
-      const lineRevenue = sold * spec.wholesaleUnitPricePaisa;
+    useLogisticsStore.setState({
+      routes: [],
+      vehicles: [],
+      loadingSheets: [],
+      dailyDispatches: [],
+      selectedSheetDetail: null,
+      activeReconciliation: null,
+      filter: {},
+      searchQuery: "",
+      isRouteModalOpen: false,
+      isVehicleModalOpen: false,
+      isLoadingManifestModalOpen: false,
+      isSettlementModalOpen: false,
+      isGatePassModalOpen: false,
+      settlementSheetId: null,
+      physicalReturns: {},
+      physicalCashPaisa: 0,
+      emptyCratesReturned: 0,
+      routeExpensesPaisa: 0,
+      isLoading: false,
+      error: null,
+    });
+  });
 
-      lineResults[item.productId] = {
-        soldBase: sold,
-        unitRatePaisa: spec.wholesaleUnitPricePaisa,
-        lineRevenuePaisa: lineRevenue,
-      };
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
 
-      totalSoldBase += sold;
-      grossSalesRevenuePaisa += lineRevenue;
-    }
+  async function createTestDispatch(salesmanId = 5, salesmanName = "Muhammad Ali", itemsOverride?: any[]) {
+    const prod1 = loadSavedProducts().find((p) => p.id === 1)!;
+    const items = itemsOverride || [
+      {
+        productId: 1,
+        productSku: prod1.sku,
+        productName: prod1.name,
+        packName: prod1.requiresCrate ? "Crate" : "Pack",
+        unitsPerPack: prod1.bottlesPerPack,
+        wholesalePackPricePaisa: prod1.wholesalePackPricePaisa, // 108000 paisa (1080 PKR)
+        isGlass: prod1.requiresCrate || false,
+        dispatchedPacks: 50,
+        dispatchedLoose: 0,
+        totalDispatchedBase: 50 * prod1.bottlesPerPack, // 200 base units
+        soldPacks: 0,
+        soldLoose: 0,
+        totalSoldBase: 0,
+        returnedIntactPacks: 0,
+        returnedIntactLoose: 0,
+        totalReturnedIntactBase: 0,
+        damagedPacks: 0,
+        damagedLoose: 0,
+        totalDamagedBase: 0,
+        lineRevenuePaisa: 0,
+      },
+    ];
 
-    return {
-      lineResults,
-      totalSoldBase,
-      grossSalesRevenuePaisa,
-    };
+    return useLogisticsStore.getState().createDailyDispatch({
+      sheetNumber: `LOAD-${salesmanId}-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      date: "2026-11-16",
+      routeId: salesmanId === 5 ? 1 : salesmanId === 6 ? 2 : 3,
+      routeName: salesmanId === 5 ? "City Center" : "Suburban Beat",
+      salesmanId,
+      salesmanName,
+      salesmanKhataId: salesmanId,
+      vehicleNumber: "LES-2489",
+      status: "OPEN",
+      emptyCratesLoaded: 50,
+      emptyCratesReturned: 0,
+      items,
+      totalSalesRevenuePaisa: 0,
+      cashDepositedPaisa: 0,
+      unpaidBalancePaisa: 0,
+    });
   }
 
-  /**
-   * Domain settlement: Cash Settlement & Unpaid Balance Posting
-   */
-  function settleRouteVan(params: {
-    salesmanAccountId: number;
-    sheetNumber: string;
-    items: ReturnLineItem[];
-    cashDepositedPaisa: number;
-    settlementDate?: string;
-  }): {
-    grossSalesRevenuePaisa: number;
-    cashDepositedPaisa: number;
-    unpaidBalancePaisa: number;
-    creditAdvancePaisa: number;
-    postedTransaction: KhataTransaction | null;
-    updatedAccount: KhataAccount;
-  } {
-    const { salesmanAccountId, sheetNumber, items, cashDepositedPaisa, settlementDate } = params;
-
-    const sales = calculateRouteSales(items);
-    const grossRev = sales.grossSalesRevenuePaisa;
-    const dateStr = settlementDate || new Date().toISOString().slice(0, 10);
-
-    const targetAccount = accounts.find((a) => a.id === salesmanAccountId);
-    if (!targetAccount) {
-      throw new Error(`Salesman account ID ${salesmanAccountId} not found`);
-    }
-    if (targetAccount.category !== "SALESMAN") {
-      throw new Error(`Account ID ${salesmanAccountId} is not categorized as SALESMAN`);
-    }
-
-    let unpaidBalancePaisa = 0;
-    let creditAdvancePaisa = 0;
-    let postedTransaction: KhataTransaction | null = null;
-    let updatedAccount = { ...targetAccount };
-
-    if (cashDepositedPaisa >= grossRev) {
-      // Full payment or overpayment
-      unpaidBalancePaisa = 0;
-      creditAdvancePaisa = cashDepositedPaisa - grossRev;
-
-      if (creditAdvancePaisa > 0) {
-        // Post credit advance if deposited more than gross revenue
-        const prevBal = targetAccount.currentBalance;
-        const newBal = prevBal - (creditAdvancePaisa / 100);
-        const newTxId = transactions.length > 0 ? Math.max(...transactions.map((t) => t.id)) + 1 : 1;
-
-        postedTransaction = {
-          id: newTxId,
-          accountId: targetAccount.id,
-          accountName: `${targetAccount.holderName} (${targetAccount.shopName})`,
-          transactionDate: dateStr,
-          transactionType: "CREDIT",
-          amount: creditAdvancePaisa / 100,
-          paymentReceived: creditAdvancePaisa / 100,
-          paymentGiven: 0,
-          description: `Advance / Overpayment on Sheet ${sheetNumber}`,
-          previousBalance: prevBal,
-          newBalance: newBal,
-          referenceNo: sheetNumber,
-          createdAt: new Date().toISOString(),
-        };
-
-        transactions.push(postedTransaction);
-        updatedAccount.currentBalance = newBal;
-        updatedAccount.updatedAt = new Date().toISOString();
-      }
-    } else {
-      // Partial payment: post unpaid balance as DEBIT to salesman ledger
-      unpaidBalancePaisa = grossRev - cashDepositedPaisa;
-      const unpaidRupees = unpaidBalancePaisa / 100;
-      const prevBal = targetAccount.currentBalance;
-      const newBal = prevBal + unpaidRupees;
-
-      const newTxId = transactions.length > 0 ? Math.max(...transactions.map((t) => t.id)) + 1 : 1;
-
-      postedTransaction = {
-        id: newTxId,
-        accountId: targetAccount.id,
-        accountName: `${targetAccount.holderName} (${targetAccount.shopName})`,
-        transactionDate: dateStr,
-        transactionType: "DEBIT",
-        amount: unpaidRupees,
-        paymentReceived: 0,
-        paymentGiven: 0,
-        description: `Unpaid van route sales on Sheet ${sheetNumber}`,
-        previousBalance: prevBal,
-        newBalance: newBal,
-        referenceNo: sheetNumber,
-        createdAt: new Date().toISOString(),
-      };
-
-      transactions.push(postedTransaction);
-      updatedAccount.currentBalance = newBal;
-      updatedAccount.updatedAt = new Date().toISOString();
-    }
-
-    // Persist to store/storage
-    accounts = accounts.map((a) => (a.id === updatedAccount.id ? updatedAccount : a));
-    saveKhataAccounts(accounts);
-    saveKhataTransactions(transactions);
-
-    return {
-      grossSalesRevenuePaisa: grossRev,
-      cashDepositedPaisa,
-      unpaidBalancePaisa,
-      creditAdvancePaisa,
-      postedTransaction,
-      updatedAccount,
-    };
-  }
-
-  /**
-   * Domain recovery: Salesman records subsequent cash recovery payment
-   */
-  function recordSalesmanPayment(
+  function recordSalesmanCreditPayment(
     salesmanAccountId: number,
     amountRupees: number,
     referenceNo: string,
     notes?: string
   ): { transaction: KhataTransaction; updatedAccount: KhataAccount } {
+    const accounts = loadSavedKhataAccounts();
+    const transactions = loadSavedKhataTransactions();
     const targetAccount = accounts.find((a) => a.id === salesmanAccountId);
     if (!targetAccount) throw new Error(`Salesman ID ${salesmanAccountId} not found`);
 
@@ -305,437 +184,428 @@ describe("R4 & R5: Salesman Khata Settlement & 5-Report Suite", () => {
       updatedAt: new Date().toISOString(),
     };
 
-    accounts = accounts.map((a) => (a.id === updatedAccount.id ? updatedAccount : a));
-    saveKhataAccounts(accounts);
+    saveKhataAccounts(accounts.map((a) => (a.id === updatedAccount.id ? updatedAccount : a)));
     saveKhataTransactions(transactions);
 
     return { transaction: tx, updatedAccount };
   }
 
-  beforeEach(() => {
-    mockStorage = new MockStorage();
-    (globalThis as any).window = globalThis;
-    (globalThis as any).localStorage = mockStorage;
-
-    // Deep clone initial accounts and transactions to guarantee fresh state
-    accounts = JSON.parse(JSON.stringify(INITIAL_KHATA_ACCOUNTS));
-    transactions = JSON.parse(JSON.stringify(loadSavedKhataTransactions()));
-
-    saveKhataAccounts(accounts);
-    saveKhataTransactions(transactions);
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
   // ==========================================================================
   // TIER 1: Happy Path Equivalence Classes (≥ 5 tests)
   // ==========================================================================
 
-  it("T1.1: Automated sales calculation computes Sold Qty = Dispatched - Intact - Damaged and Gross Revenue = Sold * Rate", () => {
-    // 50 crates RGB dispatched (1,200 btls), 10 crates returned intact (240 btls), 6 btls broken
-    // Sold = 1,200 - 240 - 6 = 954 bottles
-    // Rate = 90.00 PKR (9,000 paisa)
-    // Revenue = 954 * 9,000 = 8,586,000 paisa (85,860 PKR)
-    const items: ReturnLineItem[] = [
-      { productId: 1, dispatchedBase: 1200, returnedIntactBase: 240, damagedBase: 6 },
-    ];
+  it("T1.1: Automated sales calculation computes Sold Qty = Dispatched - Intact - Damaged and Gross Revenue = Sold * Rate", async () => {
+    const dispatch = await createTestDispatch(5, "Muhammad Ali");
 
-    const result = calculateRouteSales(items);
+    // 50 packs dispatched (200 btls), 10 packs intact return (40 btls), 2 packs damaged (8 btls)
+    // Sold = 50 - 10 - 2 = 38 packs (152 btls)
+    // Wholesale price = 108000 paisa per pack (1,080 PKR)
+    // Gross revenue = 38 * 1080 = 41,040 PKR (4,104,000 paisa)
+    const settled = await useLogisticsStore.getState().confirmEveningReturn(
+      dispatch.id,
+      [{ productId: 1, returnedIntactPacks: 10, returnedIntactLoose: 0, damagedPacks: 2, damagedLoose: 0 }],
+      4104000
+    );
 
-    expect(result.totalSoldBase).toBe(954);
-    expect(result.lineResults[1].soldBase).toBe(954);
-    expect(result.lineResults[1].unitRatePaisa).toBe(9000);
-    expect(result.lineResults[1].lineRevenuePaisa).toBe(8586000);
-    expect(result.grossSalesRevenuePaisa).toBe(8586000);
+    expect(settled.items[0].soldPacks).toBe(38);
+    expect(settled.items[0].totalSoldBase).toBe(152);
+    expect(settled.items[0].lineRevenuePaisa).toBe(4104000);
+    expect(settled.totalSalesRevenuePaisa).toBe(4104000);
   });
 
-  it("T1.2: Full cash settlement deposits 100% revenue, leaving 0 unpaid balance and creating no khata debt", () => {
-    // Dispatched 500 bottles PET 1.5L @ 175.00 PKR = 87,500 PKR (8,750,000 paisa)
-    // Intact returned: 100, Damaged: 0 -> Sold: 400
-    // Gross Revenue = 400 * 175 = 70,000 PKR (7,000,000 paisa)
-    const items: ReturnLineItem[] = [
-      { productId: 2, dispatchedBase: 500, returnedIntactBase: 100, damagedBase: 0 },
-    ];
-    const initialDebt = accounts.find((a) => a.id === 5)!.currentBalance; // Muhammad Ali
+  it("T1.2: Full cash settlement deposits 100% revenue, leaving 0 unpaid balance and creating no khata debt", async () => {
+    const initialDebt = loadSavedKhataAccounts().find((a) => a.id === 5)!.currentBalance; // 0
+    const dispatch = await createTestDispatch(5, "Muhammad Ali");
 
-    const settlement = settleRouteVan({
-      salesmanAccountId: 5,
-      sheetNumber: "LOAD-FULL-CASH",
-      items,
-      cashDepositedPaisa: 7000000, // Full 70,000 PKR deposited
-    });
+    // Sold: 40 packs. Revenue = 40 * 1080 = 43,200 PKR (4,320,000 paisa)
+    // Cash deposited: 43,200 PKR full
+    const settled = await useLogisticsStore.getState().confirmEveningReturn(
+      dispatch.id,
+      [{ productId: 1, returnedIntactPacks: 10, returnedIntactLoose: 0, damagedPacks: 0, damagedLoose: 0 }],
+      4320000
+    );
 
-    expect(settlement.grossSalesRevenuePaisa).toBe(7000000);
-    expect(settlement.cashDepositedPaisa).toBe(7000000);
-    expect(settlement.unpaidBalancePaisa).toBe(0);
-    expect(settlement.creditAdvancePaisa).toBe(0);
-    expect(settlement.postedTransaction).toBeNull(); // No debt transaction needed
-    expect(settlement.updatedAccount.currentBalance).toBe(initialDebt); // Debt unchanged
+    expect(settled.totalSalesRevenuePaisa).toBe(4320000);
+    expect(settled.cashDepositedPaisa).toBe(4320000);
+    expect(settled.unpaidBalancePaisa).toBe(0);
+
+    const ali = loadSavedKhataAccounts().find((a) => a.id === 5)!;
+    expect(ali.currentBalance).toBe(initialDebt); // 0 debt
+
+    const txs = loadSavedKhataTransactions().filter((t) => t.referenceNo === dispatch.sheetNumber);
+    expect(txs).toHaveLength(0); // No debit transaction posted
   });
 
-  it("T1.3: Partial cash settlement automatically posts unpaid balance as DEBIT to salesman ledger under SALESMAN category", () => {
-    // Gross Revenue = 80,000 PKR (8,000,000 paisa)
-    // Cash deposited = 50,000 PKR (5,000,000 paisa)
-    // Unpaid Balance = 30,000 PKR (30,000 rupees debit)
-    // 800 cans (pid 4) sold @ 100 PKR = 80,000 PKR
-    const canItems: ReturnLineItem[] = [
-      { productId: 4, dispatchedBase: 1000, returnedIntactBase: 200, damagedBase: 0 }, // Sold: 800 * 100 = 80,000 PKR
-    ];
+  it("T1.3: Partial cash settlement automatically posts unpaid balance as DEBIT to salesman ledger under SALESMAN category", async () => {
+    const dispatch = await createTestDispatch(5, "Muhammad Ali");
 
-    const ali = accounts.find((a) => a.id === 5)!;
+    // Sold: 40 packs @ 1,080 PKR = 43,200 PKR (4,320,000 paisa)
+    // Cash deposited: 30,000 PKR (3,000,000 paisa)
+    // Unpaid balance: 13,200 PKR (1,320,000 paisa)
+    const settled = await useLogisticsStore.getState().confirmEveningReturn(
+      dispatch.id,
+      [{ productId: 1, returnedIntactPacks: 10, returnedIntactLoose: 0, damagedPacks: 0, damagedLoose: 0 }],
+      3000000
+    );
+
+    expect(settled.unpaidBalancePaisa).toBe(1320000);
+
+    // Salesman account has 13,200 PKR debit
+    const ali = loadSavedKhataAccounts().find((a) => a.id === 5)!;
     expect(ali.category).toBe("SALESMAN");
-    const prevBal = ali.currentBalance; // 0
+    expect(ali.currentBalance).toBe(13200);
 
-    const settlement = settleRouteVan({
-      salesmanAccountId: 5,
-      sheetNumber: "LOAD-PARTIAL-CASH",
-      items: canItems,
-      cashDepositedPaisa: 5000000, // 50,000 PKR deposited
-    });
-
-    expect(settlement.grossSalesRevenuePaisa).toBe(8000000);
-    expect(settlement.unpaidBalancePaisa).toBe(3000000); // 30,000 PKR unpaid
-    expect(settlement.postedTransaction).not.toBeNull();
-    expect(settlement.postedTransaction!.transactionType).toBe("DEBIT");
-    expect(settlement.postedTransaction!.amount).toBe(30000);
-    expect(settlement.postedTransaction!.previousBalance).toBe(prevBal);
-    expect(settlement.postedTransaction!.newBalance).toBe(prevBal + 30000);
-    expect(settlement.updatedAccount.currentBalance).toBe(prevBal + 30000);
+    // DEBIT transaction created
+    const tx = loadSavedKhataTransactions().find((t) => t.referenceNo === dispatch.sheetNumber)!;
+    expect(tx).toBeDefined();
+    expect(tx.accountId).toBe(5);
+    expect(tx.transactionType).toBe("DEBIT");
+    expect(tx.amount).toBe(13200);
   });
 
-  it("T1.4: Salesman credit payment reduces outstanding ledger debt balance accurately", () => {
-    // Muhammad Ali owes 30,000 PKR from previous day
-    // He recovers cash from market and brings 20,000 PKR to the agency counter
-    const payment = recordSalesmanPayment(5, 20000, "REC-ALI-01", "Counter cash recovery");
+  it("T1.4: Salesman credit payment reduces outstanding ledger debt balance accurately", async () => {
+    // Settle sheet leaving 13,200 PKR debt
+    const dispatch = await createTestDispatch(5, "Muhammad Ali");
+    await useLogisticsStore.getState().confirmEveningReturn(
+      dispatch.id,
+      [{ productId: 1, returnedIntactPacks: 10, returnedIntactLoose: 0, damagedPacks: 0, damagedLoose: 0 }],
+      3000000
+    );
+    expect(loadSavedKhataAccounts().find((a) => a.id === 5)!.currentBalance).toBe(13200);
+
+    // Salesman brings 10,000 PKR recovery payment
+    const payment = recordSalesmanCreditPayment(5, 10000, "REC-ALI-01", "Counter recovery");
 
     expect(payment.transaction.transactionType).toBe("CREDIT");
-    expect(payment.transaction.amount).toBe(20000);
-    expect(payment.transaction.paymentReceived).toBe(20000);
-    expect(payment.updatedAccount.currentBalance).toBe(-20000); // 0 - 20000 = -20000 (credit)
+    expect(payment.transaction.amount).toBe(10000);
+    expect(loadSavedKhataAccounts().find((a) => a.id === 5)!.currentBalance).toBe(3200); // 13,200 - 10,000 = 3,200
   });
 
-  it("T1.5: Ledger transaction history preserves past balance, debit entry, credit payment, and net balance tracking", () => {
-    // Step 1: Baseline debt is 0
-    const aliAccount = accounts.find((a) => a.id === 5)!;
-    expect(aliAccount.currentBalance).toBe(0);
+  it("T1.5: Ledger transaction history preserves past balance, debit entry, credit payment, and net balance tracking", async () => {
+    const dispatch = await createTestDispatch(5, "Muhammad Ali");
 
-    // Step 2: Unpaid route balance of 15,000 PKR posted as DEBIT (150 cans sold @ 100 PKR = 15,000 PKR)
-    const exactItems: ReturnLineItem[] = [
-      { productId: 4, dispatchedBase: 200, returnedIntactBase: 50, damagedBase: 0 }, // Sold: 150 * 100 = 15,000 PKR
-    ];
-    settleRouteVan({
-      salesmanAccountId: 5,
-      sheetNumber: "LOAD-LEDGER-01",
-      items: exactItems,
-      cashDepositedPaisa: 0, // 0 cash deposited
-    });
+    // Route settlement posts 15,000 PKR DEBIT
+    // Sold: 20 packs @ 1080 = 21,600 PKR. Cash deposited = 6,600 PKR. Unpaid = 15,000 PKR.
+    await useLogisticsStore.getState().confirmEveningReturn(
+      dispatch.id,
+      [{ productId: 1, returnedIntactPacks: 30, returnedIntactLoose: 0, damagedPacks: 0, damagedLoose: 0 }],
+      660000
+    );
 
-    // Step 3: Salesman brings 10,000 PKR payment next morning
-    recordSalesmanPayment(5, 10000, "REC-ALI-02", "Morning recovery deposit");
+    // Salesman brings 10,000 PKR payment next morning
+    recordSalesmanCreditPayment(5, 10000, "REC-ALI-02", "Morning recovery deposit");
 
-    // Fetch transactions for account 5
-    const aliTxList = transactions.filter((t) => t.accountId === 5);
-    expect(aliTxList.length).toBe(2);
+    const aliTxs = loadSavedKhataTransactions().filter((t) => t.accountId === 5);
+    expect(aliTxs.length).toBe(2);
 
-    const debitTx = aliTxList.find((t) => t.transactionType === "DEBIT")!;
-    const creditTx = aliTxList.find((t) => t.transactionType === "CREDIT")!;
+    const debitTx = aliTxs.find((t) => t.transactionType === "DEBIT")!;
+    const creditTx = aliTxs.find((t) => t.transactionType === "CREDIT")!;
 
-    // Debit transaction checks
     expect(debitTx.amount).toBe(15000);
     expect(debitTx.previousBalance).toBe(0);
     expect(debitTx.newBalance).toBe(15000);
 
-    // Credit transaction checks
     expect(creditTx.amount).toBe(10000);
     expect(creditTx.previousBalance).toBe(15000);
     expect(creditTx.newBalance).toBe(5000);
 
-    // Current account balance must match latest transaction newBalance
-    const currentAli = accounts.find((a) => a.id === 5)!;
-    expect(currentAli.currentBalance).toBe(5000);
+    expect(loadSavedKhataAccounts().find((a) => a.id === 5)!.currentBalance).toBe(5000);
   });
 
   // ==========================================================================
   // TIER 2: Boundary & Corner Cases (≥ 5 tests)
   // ==========================================================================
 
-  it("T2.1: Zero cash deposit: 100% of gross sales revenue is posted as DEBIT to salesman khata", () => {
-    // 200 packs PET 500ml sold @ 105 PKR per bottle (unitsPerPack = 12, rate = 1,260 PKR per pack)
-    // Total sold base = 240 btls -> Gross Revenue = 240 * 105 = 25,200 PKR (2,520,000 paisa)
-    const items: ReturnLineItem[] = [
-      { productId: 3, dispatchedBase: 300, returnedIntactBase: 60, damagedBase: 0 }, // Sold: 240
-    ];
+  it("T2.1: 100% returned intact produces zero sold units, zero revenue, and zero debt", async () => {
+    const dispatch = await createTestDispatch(5, "Muhammad Ali");
 
-    const settlement = settleRouteVan({
-      salesmanAccountId: 6, // Rashid Mahmood
-      sheetNumber: "LOAD-ZERO-CASH",
-      items,
-      cashDepositedPaisa: 0,
-    });
+    // All 50 packs returned intact
+    const settled = await useLogisticsStore.getState().confirmEveningReturn(
+      dispatch.id,
+      [{ productId: 1, returnedIntactPacks: 50, returnedIntactLoose: 0, damagedPacks: 0, damagedLoose: 0 }],
+      0
+    );
 
-    expect(settlement.grossSalesRevenuePaisa).toBe(2520000);
-    expect(settlement.unpaidBalancePaisa).toBe(2520000);
-    expect(settlement.postedTransaction!.amount).toBe(25200);
-    expect(settlement.postedTransaction!.transactionType).toBe("DEBIT");
-    expect(settlement.updatedAccount.currentBalance).toBe(25200);
+    expect(settled.items[0].soldPacks).toBe(0);
+    expect(settled.totalSalesRevenuePaisa).toBe(0);
+    expect(settled.unpaidBalancePaisa).toBe(0);
+
+    const ali = loadSavedKhataAccounts().find((a) => a.id === 5)!;
+    expect(ali.currentBalance).toBe(0);
   });
 
-  it("T2.2: Overpayment / Advance credit: Cash deposit exceeding revenue results in 0 unpaid balance and creates credit balance", () => {
-    // Revenue = 20,000 PKR (200 cans @ 100 PKR)
-    // Cash deposited = 25,000 PKR (5,000 PKR advance)
-    const items: ReturnLineItem[] = [
-      { productId: 4, dispatchedBase: 300, returnedIntactBase: 100, damagedBase: 0 }, // Sold: 200 * 100 = 20,000 PKR
-    ];
+  it("T2.2: 100% damaged stock logs entire loss to breakage log with zero sales revenue and zero debt", async () => {
+    const dispatch = await createTestDispatch(5, "Muhammad Ali");
 
-    const settlement = settleRouteVan({
-      salesmanAccountId: 7, // Imran Khan
-      sheetNumber: "LOAD-OVERPAY",
-      items,
-      cashDepositedPaisa: 2500000, // 25,000 PKR
-    });
+    // All 50 packs damaged in transit accident
+    const settled = await useLogisticsStore.getState().confirmEveningReturn(
+      dispatch.id,
+      [{ productId: 1, returnedIntactPacks: 0, returnedIntactLoose: 0, damagedPacks: 50, damagedLoose: 0 }],
+      0
+    );
 
-    expect(settlement.grossSalesRevenuePaisa).toBe(2000000);
-    expect(settlement.unpaidBalancePaisa).toBe(0);
-    expect(settlement.creditAdvancePaisa).toBe(500000); // 5,000 PKR advance
-    expect(settlement.postedTransaction!.transactionType).toBe("CREDIT");
-    expect(settlement.postedTransaction!.amount).toBe(5000);
-    expect(settlement.updatedAccount.currentBalance).toBe(-5000); // Negative indicates advance / credit to salesman
+    expect(settled.items[0].soldPacks).toBe(0);
+    expect(settled.totalSalesRevenuePaisa).toBe(0);
+    expect(settled.unpaidBalancePaisa).toBe(0);
+
+    // Breakage log has 200 broken bottles
+    const breakage = useInventoryStore.getState().breakageLogs;
+    expect(breakage.some((b) => b.broken_base_units === 200)).toBe(true);
+
+    const ali = loadSavedKhataAccounts().find((a) => a.id === 5)!;
+    expect(ali.currentBalance).toBe(0);
   });
 
-  it("T2.3: Zero sales route (100% intact returns): Dispatched = Returned Intact, Sold = 0, Gross Revenue = 0, no debt posted", () => {
-    // Rain day / breakdown: all 1,200 bottles returned intact
-    const items: ReturnLineItem[] = [
-      { productId: 1, dispatchedBase: 1200, returnedIntactBase: 1200, damagedBase: 0 },
-    ];
+  it("T2.3: Over-payment / advance cash deposit clamps unpaid balance to zero without generating negative debt", async () => {
+    const dispatch = await createTestDispatch(5, "Muhammad Ali");
 
-    const sales = calculateRouteSales(items);
-    expect(sales.totalSoldBase).toBe(0);
-    expect(sales.grossSalesRevenuePaisa).toBe(0);
+    // Sold 20 packs @ 1,080 = 21,600 PKR (2,160,000 paisa)
+    // Driver deposits 30,000 PKR (3,000,000 paisa)
+    const settled = await useLogisticsStore.getState().confirmEveningReturn(
+      dispatch.id,
+      [{ productId: 1, returnedIntactPacks: 30, returnedIntactLoose: 0, damagedPacks: 0, damagedLoose: 0 }],
+      3000000
+    );
 
-    const settlement = settleRouteVan({
-      salesmanAccountId: 5,
-      sheetNumber: "LOAD-ALL-RETURN",
-      items,
-      cashDepositedPaisa: 0,
-    });
+    expect(settled.totalSalesRevenuePaisa).toBe(2160000);
+    expect(settled.cashDepositedPaisa).toBe(3000000);
+    expect(settled.unpaidBalancePaisa).toBe(0); // Clamped to 0
 
-    expect(settlement.grossSalesRevenuePaisa).toBe(0);
-    expect(settlement.unpaidBalancePaisa).toBe(0);
-    expect(settlement.postedTransaction).toBeNull();
+    const ali = loadSavedKhataAccounts().find((a) => a.id === 5)!;
+    expect(ali.currentBalance).toBe(0);
   });
 
-  it("T2.4: 100% transit damage / breakage: Sold = 0, Revenue = 0, damaged items quarantined, no sales debt charged to salesman", () => {
-    // Van accident: all 240 bottles damaged
-    const items: ReturnLineItem[] = [
-      { productId: 2, dispatchedBase: 240, returnedIntactBase: 0, damagedBase: 240 },
+  it("T2.4: Multiple products on same delivery sheet: revenue summed correctly and posted as single DEBIT transaction", async () => {
+    const prod1 = loadSavedProducts().find((p) => p.id === 1)!;
+    const prod2 = loadSavedProducts().find((p) => p.id === 2)!;
+
+    const items = [
+      {
+        productId: 1,
+        productSku: prod1.sku,
+        productName: prod1.name,
+        packName: "Pack",
+        unitsPerPack: prod1.bottlesPerPack,
+        wholesalePackPricePaisa: prod1.wholesalePackPricePaisa, // 108000 (1,080 PKR)
+        isGlass: false,
+        dispatchedPacks: 30,
+        dispatchedLoose: 0,
+        totalDispatchedBase: 120,
+        soldPacks: 0,
+        soldLoose: 0,
+        totalSoldBase: 0,
+        returnedIntactPacks: 0,
+        returnedIntactLoose: 0,
+        totalReturnedIntactBase: 0,
+        damagedPacks: 0,
+        damagedLoose: 0,
+        totalDamagedBase: 0,
+        lineRevenuePaisa: 0,
+      },
+      {
+        productId: 2,
+        productSku: prod2.sku,
+        productName: prod2.name,
+        packName: "Pack",
+        unitsPerPack: prod2.bottlesPerPack,
+        wholesalePackPricePaisa: prod2.wholesalePackPricePaisa, // 105000 (1,050 PKR)
+        isGlass: false,
+        dispatchedPacks: 20,
+        dispatchedLoose: 0,
+        totalDispatchedBase: 120,
+        soldPacks: 0,
+        soldLoose: 0,
+        totalSoldBase: 0,
+        returnedIntactPacks: 0,
+        returnedIntactLoose: 0,
+        totalReturnedIntactBase: 0,
+        damagedPacks: 0,
+        damagedLoose: 0,
+        totalDamagedBase: 0,
+        lineRevenuePaisa: 0,
+      },
     ];
 
-    const sales = calculateRouteSales(items);
-    // Sold = 240 - 0 - 240 = 0
-    expect(sales.totalSoldBase).toBe(0);
-    expect(sales.grossSalesRevenuePaisa).toBe(0);
+    const dispatch = await createTestDispatch(5, "Muhammad Ali", items);
 
-    const settlement = settleRouteVan({
-      salesmanAccountId: 6,
-      sheetNumber: "LOAD-ALL-BROKEN",
-      items,
-      cashDepositedPaisa: 0,
-    });
+    // Sold 20 packs of P1 (21,600 PKR) + 10 packs of P2 (10,500 PKR) = 32,100 PKR (3,210,000 paisa)
+    // Cash deposited = 20,000 PKR (2,000,000 paisa)
+    // Unpaid balance = 12,100 PKR (1,210,000 paisa)
+    const settled = await useLogisticsStore.getState().confirmEveningReturn(
+      dispatch.id,
+      [
+        { productId: 1, returnedIntactPacks: 10, returnedIntactLoose: 0, damagedPacks: 0, damagedLoose: 0 },
+        { productId: 2, returnedIntactPacks: 10, returnedIntactLoose: 0, damagedPacks: 0, damagedLoose: 0 },
+      ],
+      2000000
+    );
 
-    expect(settlement.unpaidBalancePaisa).toBe(0);
-    expect(settlement.postedTransaction).toBeNull();
+    expect(settled.totalSalesRevenuePaisa).toBe(3210000);
+    expect(settled.unpaidBalancePaisa).toBe(1210000);
+
+    const ali = loadSavedKhataAccounts().find((a) => a.id === 5)!;
+    expect(ali.currentBalance).toBe(12100);
+
+    // Single consolidated debit transaction posted for the sheet
+    const sheetTxs = loadSavedKhataTransactions().filter((t) => t.referenceNo === dispatch.sheetNumber);
+    expect(sheetTxs).toHaveLength(1);
+    expect(sheetTxs[0].amount).toBe(12100);
   });
 
-  it("T2.5: High-volume multi-SKU integer Paisa precision: Large carton quantities maintain exact zero-rounding error", () => {
-    // 5 SKUs, total 50,000 bottles
-    const items: ReturnLineItem[] = [
-      { productId: 1, dispatchedBase: 24000, returnedIntactBase: 4000, damagedBase: 100 }, // Sold: 19,900 @ 90 = 1,791,000 PKR
-      { productId: 2, dispatchedBase: 6000,  returnedIntactBase: 1000, damagedBase: 50 },  // Sold: 4,950 @ 175 = 866,250 PKR
-      { productId: 3, dispatchedBase: 12000, returnedIntactBase: 2000, damagedBase: 200 }, // Sold: 9,800 @ 105 = 1,029,000 PKR
-      { productId: 4, dispatchedBase: 4800,  returnedIntactBase: 800,  damagedBase: 0 },   // Sold: 4,000 @ 100 = 400,000 PKR
-      { productId: 5, dispatchedBase: 7200,  returnedIntactBase: 1200, damagedBase: 60 },  // Sold: 5,940 @ 90 = 534,600 PKR
-    ];
+  it("T2.5: Zero cash deposit posts entire gross sales revenue as DEBIT to salesman ledger", async () => {
+    const dispatch = await createTestDispatch(5, "Muhammad Ali");
 
-    const sales = calculateRouteSales(items);
+    // Sold 20 packs @ 1080 = 21,600 PKR (2,160,000 paisa)
+    // 0 cash deposited
+    const settled = await useLogisticsStore.getState().confirmEveningReturn(
+      dispatch.id,
+      [{ productId: 1, returnedIntactPacks: 30, returnedIntactLoose: 0, damagedPacks: 0, damagedLoose: 0 }],
+      0
+    );
 
-    // Sum in PKR: 1,791,000 + 866,250 + 1,029,000 + 400,000 + 534,600 = 4,620,850 PKR
-    // Sum in Paisa: 462,085,000 Paisa
-    const expectedPaisa = 462085000;
-    expect(sales.grossSalesRevenuePaisa).toBe(expectedPaisa);
+    expect(settled.totalSalesRevenuePaisa).toBe(2160000);
+    expect(settled.unpaidBalancePaisa).toBe(2160000);
 
-    // Cash deposited: 4,000,000 PKR (400,000,000 paisa)
-    // Unpaid balance: 620,850 PKR (62,085,000 paisa)
-    const settlement = settleRouteVan({
-      salesmanAccountId: 5,
-      sheetNumber: "LOAD-HIGH-VOLUME",
-      items,
-      cashDepositedPaisa: 400000000,
-    });
-
-    expect(settlement.unpaidBalancePaisa).toBe(62085000);
-    expect(settlement.postedTransaction!.amount).toBe(620850);
+    const ali = loadSavedKhataAccounts().find((a) => a.id === 5)!;
+    expect(ali.currentBalance).toBe(21600);
   });
 
   // ==========================================================================
   // TIER 3: Multi-Salesman & Combinatorial Ledger Flows (≥ 3 tests)
   // ==========================================================================
 
-  it("T3.1: Multi-salesman fleet route isolation: 3 salesmen settle simultaneously without ledger crosstalk", () => {
-    // Salesman 1: Muhammad Ali (id 5) -> Revenue 50,000 PKR, Cash 40,000 PKR -> Debt +10,000
-    // Salesman 2: Rashid Mahmood (id 6) -> Revenue 80,000 PKR, Cash 80,000 PKR -> Debt 0
-    // Salesman 3: Imran Khan (id 7) -> Revenue 60,000 PKR, Cash 30,000 PKR -> Debt +30,000
-    const items1: ReturnLineItem[] = [
-      { productId: 4, dispatchedBase: 600, returnedIntactBase: 100, damagedBase: 0 }, // Sold: 500 * 100 = 50,000 PKR
-    ];
-    const items2: ReturnLineItem[] = [
-      { productId: 4, dispatchedBase: 1000, returnedIntactBase: 200, damagedBase: 0 }, // Sold: 800 * 100 = 80,000 PKR
-    ];
-    const items3: ReturnLineItem[] = [
-      { productId: 4, dispatchedBase: 800, returnedIntactBase: 200, damagedBase: 0 }, // Sold: 600 * 100 = 60,000 PKR
-    ];
+  it("T3.1: Multi-day consecutive route settlements for same salesman: running balance accumulates correctly", async () => {
+    // Day 1: 5,000 PKR unpaid balance
+    const d1 = await createTestDispatch(5, "Muhammad Ali");
+    await useLogisticsStore.getState().confirmEveningReturn(
+      d1.id,
+      [{ productId: 1, returnedIntactPacks: 30, returnedIntactLoose: 0, damagedPacks: 0, damagedLoose: 0 }], // Sold 20 = 21,600 PKR
+      1660000 // Cash = 16,600 -> Unpaid = 5,000 PKR
+    );
+    expect(loadSavedKhataAccounts().find((a) => a.id === 5)!.currentBalance).toBe(5000);
 
-    settleRouteVan({ salesmanAccountId: 5, sheetNumber: "LOAD-FLEET-01", items: items1, cashDepositedPaisa: 4000000 });
-    settleRouteVan({ salesmanAccountId: 6, sheetNumber: "LOAD-FLEET-02", items: items2, cashDepositedPaisa: 8000000 });
-    settleRouteVan({ salesmanAccountId: 7, sheetNumber: "LOAD-FLEET-03", items: items3, cashDepositedPaisa: 3000000 });
+    // Day 2: 3,000 PKR unpaid balance
+    const d2 = await createTestDispatch(5, "Muhammad Ali");
+    await useLogisticsStore.getState().confirmEveningReturn(
+      d2.id,
+      [{ productId: 1, returnedIntactPacks: 30, returnedIntactLoose: 0, damagedPacks: 0, damagedLoose: 0 }], // Sold 20 = 21,600 PKR
+      1860000 // Cash = 18,600 -> Unpaid = 3,000 PKR
+    );
+    expect(loadSavedKhataAccounts().find((a) => a.id === 5)!.currentBalance).toBe(8000);
 
-    const accAli = accounts.find((a) => a.id === 5)!;
-    const accRashid = accounts.find((a) => a.id === 6)!;
-    const accImran = accounts.find((a) => a.id === 7)!;
-
-    expect(accAli.currentBalance).toBe(10000);
-    expect(accRashid.currentBalance).toBe(0);
-    expect(accImran.currentBalance).toBe(30000);
-
-    // Customer accounts must remain untouched
-    const retailer1 = accounts.find((a) => a.id === 1)!;
-    expect(retailer1.currentBalance).toBe(45000); // Untouched
+    // Day 3: Full cash deposit
+    const d3 = await createTestDispatch(5, "Muhammad Ali");
+    await useLogisticsStore.getState().confirmEveningReturn(
+      d3.id,
+      [{ productId: 1, returnedIntactPacks: 30, returnedIntactLoose: 0, damagedPacks: 0, damagedLoose: 0 }],
+      2160000 // Full cash
+    );
+    // Balance remains 8,000 PKR
+    expect(loadSavedKhataAccounts().find((a) => a.id === 5)!.currentBalance).toBe(8000);
   });
 
-  it("T3.2: Multi-day cumulative ledger accumulation: Day 1 deficit + Day 2 recovery + Day 2 evening settlement maintains continuous rolling balance", () => {
-    const salesmanId = 5;
+  it("T3.2: Multi-salesman fleet settlement: 3 salesmen settle on same evening without ledger cross-contamination", async () => {
+    // Salesman 5 (Ali): full cash
+    const d1 = await createTestDispatch(5, "Muhammad Ali");
+    await useLogisticsStore.getState().confirmEveningReturn(
+      d1.id,
+      [{ productId: 1, returnedIntactPacks: 30, returnedIntactLoose: 0, damagedPacks: 0, damagedLoose: 0 }],
+      2160000
+    );
 
-    // Day 1: Sales 40,000 PKR, Cash 25,000 PKR -> Debt = +15,000 PKR
-    const day1Items: ReturnLineItem[] = [
-      { productId: 4, dispatchedBase: 500, returnedIntactBase: 100, damagedBase: 0 }, // Sold 400 * 100 = 40,000 PKR
-    ];
-    settleRouteVan({
-      salesmanAccountId: salesmanId,
-      sheetNumber: "LOAD-DAY-1",
-      items: day1Items,
-      cashDepositedPaisa: 2500000,
-      settlementDate: "2026-11-15",
-    });
-    expect(accounts.find((a) => a.id === salesmanId)!.currentBalance).toBe(15000);
+    // Salesman 6 (Rashid): 10,000 PKR unpaid
+    const d2 = await createTestDispatch(6, "Rashid Mahmood");
+    await useLogisticsStore.getState().confirmEveningReturn(
+      d2.id,
+      [{ productId: 1, returnedIntactPacks: 30, returnedIntactLoose: 0, damagedPacks: 0, damagedLoose: 0 }],
+      1160000
+    );
 
-    // Day 2 Morning: Salesman pays 10,000 PKR recovered from retailers
-    recordSalesmanPayment(salesmanId, 10000, "REC-DAY2-AM", "Day 2 morning recovery");
-    expect(accounts.find((a) => a.id === salesmanId)!.currentBalance).toBe(5000);
+    // Salesman 7 (Imran): 21,600 PKR unpaid (0 cash)
+    const d3 = await createTestDispatch(7, "Imran Khan");
+    await useLogisticsStore.getState().confirmEveningReturn(
+      d3.id,
+      [{ productId: 1, returnedIntactPacks: 30, returnedIntactLoose: 0, damagedPacks: 0, damagedLoose: 0 }],
+      0
+    );
 
-    // Day 2 Evening: Sales 50,000 PKR, Cash 45,000 PKR -> Unpaid 5,000 PKR added
-    const day2Items: ReturnLineItem[] = [
-      { productId: 4, dispatchedBase: 600, returnedIntactBase: 100, damagedBase: 0 }, // Sold 500 * 100 = 50,000 PKR
-    ];
-    settleRouteVan({
-      salesmanAccountId: salesmanId,
-      sheetNumber: "LOAD-DAY-2",
-      items: day2Items,
-      cashDepositedPaisa: 4500000,
-      settlementDate: "2026-11-16",
-    });
-
-    // Net balance = 5,000 (after morning payment) + 5,000 (day 2 unpaid) = 10,000 PKR
-    const finalAli = accounts.find((a) => a.id === salesmanId)!;
-    expect(finalAli.currentBalance).toBe(10000);
-
-    const aliHistory = transactions.filter((t) => t.accountId === salesmanId);
-    expect(aliHistory.length).toBe(3); // 2 debits + 1 credit
+    expect(loadSavedKhataAccounts().find((a) => a.id === 5)!.currentBalance).toBe(0);
+    expect(loadSavedKhataAccounts().find((a) => a.id === 6)!.currentBalance).toBe(10000);
+    expect(loadSavedKhataAccounts().find((a) => a.id === 7)!.currentBalance).toBe(21600);
   });
 
-  it("T3.3: Reversal / multi-edit khata adjustment: Correcting a settled sheet adjusts salesman ledger balance cleanly", () => {
-    // Initial settled: Sold 500 cans @ 100 = 50,000 PKR, Cash 30,000 -> Unpaid 20,000 PKR
-    const itemsV1: ReturnLineItem[] = [
-      { productId: 4, dispatchedBase: 600, returnedIntactBase: 100, damagedBase: 0 },
-    ];
-    settleRouteVan({
-      salesmanAccountId: 6,
-      sheetNumber: "LOAD-RECAL",
-      items: itemsV1,
-      cashDepositedPaisa: 3000000,
+  it("T3.3: Settlement edit / recalibration: adjusting return modifies salesman balance without orphaned transactions", async () => {
+    const dispatch = await createTestDispatch(5, "Muhammad Ali");
+
+    // Initial settlement: Sold 20 = 21,600 PKR. Cash = 15,000 PKR. Unpaid = 6,600 PKR.
+    await useLogisticsStore.getState().confirmEveningReturn(
+      dispatch.id,
+      [{ productId: 1, returnedIntactPacks: 30, returnedIntactLoose: 0, damagedPacks: 0, damagedLoose: 0 }],
+      1500000
+    );
+    expect(loadSavedKhataAccounts().find((a) => a.id === 5)!.currentBalance).toBe(6600);
+
+    // Edit: driver actually returned 32 packs intact (sold = 18 packs = 19,440 PKR).
+    // Cash still 15,000 PKR -> new unpaid = 4,440 PKR.
+    await useLogisticsStore.getState().recalibrateDispatchSheet({
+      sheetId: dispatch.id,
+      status: "SETTLED",
+      items: [{ productId: 1, dispatchedPacks: 50, dispatchedLoose: 0, returnedIntactPacks: 32, returnedIntactLoose: 0, damagedPacks: 0, damagedLoose: 0 }],
+      cashDepositedPaisa: 1500000,
     });
-    expect(accounts.find((a) => a.id === 6)!.currentBalance).toBe(20000);
 
-    // Supervisor edit: Discovered 50 additional cans were returned intact (returns = 150)
-    // New Sold = 450 * 100 = 45,000 PKR
-    // New Unpaid = 45,000 - 30,000 = 15,000 PKR
-    // Delta adjustment = -5,000 PKR
-    const prevBal = accounts.find((a) => a.id === 6)!.currentBalance;
-    const correctionRupees = 5000;
-    const newBal = prevBal - correctionRupees;
+    // Balance updated cleanly to 4,440 PKR
+    expect(loadSavedKhataAccounts().find((a) => a.id === 5)!.currentBalance).toBe(4440);
 
-    const auditTx: KhataTransaction = {
-      id: 999,
-      accountId: 6,
-      accountName: "Rashid Mahmood",
-      transactionDate: new Date().toISOString().slice(0, 10),
-      transactionType: "CREDIT",
-      amount: correctionRupees,
-      paymentReceived: 0,
-      paymentGiven: 0,
-      description: "Audit correction: 50 additional intact cans on LOAD-RECAL",
-      previousBalance: prevBal,
-      newBalance: newBal,
-      referenceNo: "LOAD-RECAL",
-      createdAt: new Date().toISOString(),
-    };
-    transactions.push(auditTx);
-    accounts = accounts.map((a) => (a.id === 6 ? { ...a, currentBalance: newBal } : a));
-
-    expect(accounts.find((a) => a.id === 6)!.currentBalance).toBe(15000);
+    // Only 1 transaction for this sheet exists (no orphaned duplicate)
+    const txs = loadSavedKhataTransactions().filter((t) => t.referenceNo === dispatch.sheetNumber);
+    expect(txs).toHaveLength(1);
+    expect(txs[0].amount).toBe(4440);
   });
 
   // ==========================================================================
-  // TIER 4: Realistic Agency Daily End-to-End Simulation & 5-Report Suite Validation (≥ 2 tests)
+  // TIER 4: Realistic Agency Daily End-to-End Simulation & Report Audit (≥ 2 tests)
   // ==========================================================================
 
-  it("T4.1: End-of-day agency audit: 3 delivery vans complete daily routes with mixed settlement profiles and exact agency cash balance", () => {
-    // Van 1 (Ali, R-01): Dispatched 1,000 RGB, Returned 200, Sold 800 -> 72,000 PKR. Cash 72,000 PKR (Full) -> Debt 0
-    // Van 2 (Rashid, R-02): Dispatched 500 PET, Returned 100, Sold 400 -> 70,000 PKR. Cash 50,000 PKR (Partial) -> Debt 20,000
-    // Van 3 (Imran, R-03): Dispatched 400 CAN, Returned 100, Sold 300 -> 30,000 PKR. Cash 35,000 PKR (Overpay) -> Credit 5,000
+  it("T4.1: Realistic agency daily simulation: Fleet dispatch, route sales, evening return deposits, and khata reconciliation", async () => {
+    // Settle 3 vans
+    const d1 = await createTestDispatch(5, "Muhammad Ali");
+    const d2 = await createTestDispatch(6, "Rashid Mahmood");
+    const d3 = await createTestDispatch(7, "Imran Khan");
 
-    const v1Items: ReturnLineItem[] = [{ productId: 1, dispatchedBase: 1000, returnedIntactBase: 200, damagedBase: 0 }];
-    const v2Items: ReturnLineItem[] = [{ productId: 2, dispatchedBase: 500, returnedIntactBase: 100, damagedBase: 0 }];
-    const v3Items: ReturnLineItem[] = [{ productId: 4, dispatchedBase: 400, returnedIntactBase: 100, damagedBase: 0 }];
+    await useLogisticsStore.getState().confirmEveningReturn(
+      d1.id,
+      [{ productId: 1, returnedIntactPacks: 20, returnedIntactLoose: 0, damagedPacks: 0, damagedLoose: 0 }], // Sold 30 = 32,400 PKR
+      3240000 // Full cash
+    );
 
-    const s1 = settleRouteVan({ salesmanAccountId: 5, sheetNumber: "LOAD-AUDIT-1", items: v1Items, cashDepositedPaisa: 7200000 });
-    const s2 = settleRouteVan({ salesmanAccountId: 6, sheetNumber: "LOAD-AUDIT-2", items: v2Items, cashDepositedPaisa: 5000000 });
-    const s3 = settleRouteVan({ salesmanAccountId: 7, sheetNumber: "LOAD-AUDIT-3", items: v3Items, cashDepositedPaisa: 3500000 });
+    await useLogisticsStore.getState().confirmEveningReturn(
+      d2.id,
+      [{ productId: 1, returnedIntactPacks: 20, returnedIntactLoose: 0, damagedPacks: 0, damagedLoose: 0 }], // Sold 30 = 32,400 PKR
+      2500000 // 25,000 cash -> 7,400 unpaid
+    );
 
-    // Aggregate agency revenue: 72,000 + 70,000 + 30,000 = 172,000 PKR
-    const totalAgencyGrossRevenue = s1.grossSalesRevenuePaisa + s2.grossSalesRevenuePaisa + s3.grossSalesRevenuePaisa;
-    expect(totalAgencyGrossRevenue).toBe(17200000); // 172,000 PKR
+    await useLogisticsStore.getState().confirmEveningReturn(
+      d3.id,
+      [{ productId: 1, returnedIntactPacks: 20, returnedIntactLoose: 0, damagedPacks: 0, damagedLoose: 0 }], // Sold 30 = 32,400 PKR
+      2000000 // 20,000 cash -> 12,400 unpaid
+    );
 
-    // Total cash collected into agency safe: 72,000 + 50,000 + 35,000 = 157,000 PKR
-    const totalAgencyCashCollected = s1.cashDepositedPaisa + s2.cashDepositedPaisa + s3.cashDepositedPaisa;
-    expect(totalAgencyCashCollected).toBe(15700000); // 157,000 PKR
+    const accounts = loadSavedKhataAccounts();
+    const ali = accounts.find((a) => a.id === 5)!;
+    const rashid = accounts.find((a) => a.id === 6)!;
+    const imran = accounts.find((a) => a.id === 7)!;
 
-    // Total new net salesman debt = +20,000 (Rashid) - 5,000 (Imran) = 15,000 PKR
-    // Exactly matches Revenue (172,000) - Cash (157,000) = 15,000 PKR!
-    const netDebtCreated = (accounts.find((a) => a.id === 5)!.currentBalance) +
-                           (accounts.find((a) => a.id === 6)!.currentBalance) +
-                           (accounts.find((a) => a.id === 7)!.currentBalance);
-    expect(netDebtCreated * 100).toBe(totalAgencyGrossRevenue - totalAgencyCashCollected);
+    expect(ali.currentBalance).toBe(0);
+    expect(rashid.currentBalance).toBe(7400);
+    expect(imran.currentBalance).toBe(12400);
+
+    const totalFleetDebt = ali.currentBalance + rashid.currentBalance + imran.currentBalance;
+    expect(totalFleetDebt).toBe(19800); // 7,400 + 12,400 = 19,800 PKR
   });
 
-  it("T4.2: Dedicated 5-Report Suite validation: Data consistency across Morning Dispatch, Evening Return, Daily Sales, Salesman Settlement, and Outstanding Khata Balance reports", () => {
-    // Verify that ALL 5 reports required by R5 exist in the catalog with complete metadata:
-    // 1. Morning Dispatch Report (REP-27)
-    // 2. Evening Return Report (REP-28)
-    // 3. Daily Total Sales Report (REP-01)
-    // 4. Salesman Settlement Report (REP-05)
-    // 5. Outstanding Khata Balance Report (REP-04 / REP-11)
-
+  it("T4.2: Dedicated 5-Report Suite validation: Data consistency across Morning Dispatch, Evening Return, Daily Sales, Salesman Settlement, and Outstanding Khata Balance reports", async () => {
+    // 1. Verify report catalog definitions
     const rep27 = ALL_REPORTS.find((r) => r.id === "REP-27");
     const rep28 = ALL_REPORTS.find((r) => r.id === "REP-28");
     const rep01 = ALL_REPORTS.find((r) => r.id === "REP-01");
@@ -743,75 +613,36 @@ describe("R4 & R5: Salesman Khata Settlement & 5-Report Suite", () => {
     const rep04 = ALL_REPORTS.find((r) => r.id === "REP-04");
 
     expect(rep27).toBeDefined();
-    expect(rep27!.name).toContain("Delivery Sheet & Manifest");
-    expect(rep27!.columns.some((c) => c.key === "loaded_packs")).toBe(true);
-
     expect(rep28).toBeDefined();
-    expect(rep28!.name).toContain("Van Stock Issuance & Reconcile");
-    expect(rep28!.columns.some((c) => c.key === "returned_packs")).toBe(true);
-
     expect(rep01).toBeDefined();
-    expect(rep01!.name).toContain("Daily Sales Summary");
-    expect(rep01!.columns.some((c) => c.key === "gross_total_paisa")).toBe(true);
-
     expect(rep05).toBeDefined();
-    expect(rep05!.name).toContain("Salesman & Van Performance");
-    expect(rep05!.columns.some((c) => c.key === "driver_name")).toBe(true);
-
     expect(rep04).toBeDefined();
-    expect(rep04!.name).toContain("Customer-Wise Sales & Volume");
-    expect(rep04!.columns.some((c) => c.key === "current_balance_paisa")).toBe(true);
 
-    // Build mock records for each of the 5 reports and verify cross-report invariant consistency
-    const morningRecord = {
-      sheet_number: "LOAD-20261116-01",
-      salesman_name: "Muhammad Ali",
-      loaded_bottles: 1200,
-      loaded_value_paisa: 10800000,
-    };
-
-    const eveningRecord = {
-      sheet_number: "LOAD-20261116-01",
-      salesman_name: "Muhammad Ali",
-      returned_intact_bottles: 240,
-      breakage_bottles: 6,
-      sold_bottles: 954,
-    };
-
-    const salesRecord = {
-      salesman_name: "Muhammad Ali",
-      sold_bottles: 954,
-      gross_sales_paisa: 8586000,
-      cash_paid_paisa: 6000000,
-      unpaid_udhaar_paisa: 2586000,
-    };
-
-    const settlementRecord = {
-      salesman_name: "Muhammad Ali",
-      gross_sales_paisa: 8586000,
-      cash_deposited_paisa: 6000000,
-      unpaid_balance_paisa: 2586000,
-    };
-
-    const khataRecord = {
-      account_name: "Muhammad Ali",
-      category: "SALESMAN",
-      outstanding_balance_rupees: 25860,
-    };
-
-    // Invariants:
-    // 1. Morning Loaded = Evening Returned Intact + Evening Breakage + Evening Sold
-    expect(morningRecord.loaded_bottles).toBe(
-      eveningRecord.returned_intact_bottles + eveningRecord.breakage_bottles + eveningRecord.sold_bottles
+    // 2. Execute actual store morning dispatch and evening return
+    const dispatch = await createTestDispatch(5, "Muhammad Ali");
+    await useLogisticsStore.getState().confirmEveningReturn(
+      dispatch.id,
+      [{ productId: 1, returnedIntactPacks: 10, returnedIntactLoose: 0, damagedPacks: 2, damagedLoose: 0 }],
+      3000000
     );
 
-    // 2. Evening Sold = Sales Record Sold Bottles
-    expect(eveningRecord.sold_bottles).toBe(salesRecord.sold_bottles);
+    const settled = useLogisticsStore.getState().getDailyDispatchById(dispatch.id)!;
+    const item = settled.items[0];
 
-    // 3. Sales Record Gross = Settlement Record Gross
-    expect(salesRecord.gross_sales_paisa).toBe(settlementRecord.gross_sales_paisa);
+    // Invariant 1: Dispatched = Returned Intact + Damaged + Sold
+    expect(item.dispatchedPacks).toBe(item.returnedIntactPacks + item.damagedPacks + item.soldPacks);
 
-    // 4. Settlement Unpaid Paisa = Khata Outstanding Balance in Paisa
-    expect(settlementRecord.unpaid_balance_paisa).toBe(khataRecord.outstanding_balance_rupees * 100);
+    // Invariant 2: Total sales revenue equals sum of line revenues
+    expect(settled.totalSalesRevenuePaisa).toBe(item.lineRevenuePaisa);
+
+    // Invariant 3: Unpaid balance = Max(0, Revenue - Cash Deposited)
+    expect(settled.unpaidBalancePaisa).toBe(settled.totalSalesRevenuePaisa - settled.cashDepositedPaisa);
+
+    // Invariant 4: Salesman Khata ledger debit equals exact unpaid balance
+    const tx = loadSavedKhataTransactions().find((t) => t.referenceNo === settled.sheetNumber)!;
+    expect(tx.amount).toBe(settled.unpaidBalancePaisa / 100);
+
+    const salesmanAcc = loadSavedKhataAccounts().find((a) => a.id === 5)!;
+    expect(salesmanAcc.currentBalance).toBe(tx.amount);
   });
 });

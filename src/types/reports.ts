@@ -8,7 +8,8 @@ export type ReportCategory =
   | "inventory"
   | "empties"
   | "logistics"
-  | "audit";
+  | "audit"
+  | "agency";
 
 export interface ReportColumn {
   key: string;
@@ -34,7 +35,7 @@ export interface ReportMetadata {
   description: string;
   columns: ReportColumn[];
   defaultDateFilter?: "today" | "this_month" | "all" | "as_of_today";
-  filterFields?: ("date" | "date_range" | "route" | "customer" | "supplier" | "product" | "brand" | "payment_mode")[];
+  filterFields?: ("date" | "date_range" | "route" | "customer" | "supplier" | "product" | "brand" | "payment_mode" | "salesman" | "category")[];
 }
 
 export interface ReportFilterParams {
@@ -50,6 +51,10 @@ export interface ReportFilterParams {
   paymentMode?: string;
   riskStatus?: string;
   limit?: number;
+  salesmanName?: string;
+  salesmanId?: number;
+  category?: string;
+  route?: string;
 }
 
 // -------------------------------------------------------------
@@ -506,4 +511,71 @@ export interface AuditLogItemDto {
 export interface AuditLogResponseDto {
   logs: AuditLogItemDto[];
   total_count: number;
+}
+
+// -------------------------------------------------------------
+// Milestone 4: Next Cola Agency Dedicated Reports (REP-31 to REP-35)
+// -------------------------------------------------------------
+
+export interface MorningDispatchReportDto {
+  sheet_number: string;
+  date: string;
+  salesman_name: string;
+  route_name: string;
+  vehicle_number: string;
+  loaded_packs: number;
+  loaded_loose: number;
+  total_base_units: number;
+  total_wholesale_value_paisa: Paisa;
+  crates_loaded: number;
+  status: string;
+}
+
+export interface EveningReturnReportDto {
+  sheet_number: string;
+  return_date: string;
+  salesman_name: string;
+  total_dispatched_base: number;
+  total_sold_base: number;
+  total_returned_intact_base: number;
+  total_damaged_base: number;
+  crates_returned: number;
+  crate_discrepancy: number;
+  status: string;
+}
+
+export interface DailyTotalSalesReportDto {
+  sku_code: string;
+  product_name: string;
+  counter_units_sold: number;
+  salesman_units_sold: number;
+  total_volume_sold: number;
+  gross_revenue_paisa: Paisa;
+  cash_collected_paisa: Paisa;
+  khata_udhaar_paisa: Paisa;
+}
+
+export interface SalesmanSettlementReportDto {
+  sheet_number: string;
+  date: string;
+  salesman_name: string;
+  route_name: string;
+  gross_sales_paisa: Paisa;
+  breakage_value_paisa: Paisa;
+  net_sales_paisa: Paisa;
+  cash_deposited_paisa: Paisa;
+  unpaid_balance_paisa: Paisa;
+  settlement_status: string;
+}
+
+export interface OutstandingKhataReportDto {
+  account_id: number;
+  holder_name: string;
+  shop_or_route: string;
+  category: string;
+  contact: string;
+  opening_balance_paisa: Paisa;
+  total_debits_paisa: Paisa;
+  total_credits_paisa: Paisa;
+  current_balance_paisa: Paisa;
 }

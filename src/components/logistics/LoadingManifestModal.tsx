@@ -1,8 +1,10 @@
 // src/components/logistics/LoadingManifestModal.tsx
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useLogisticsStore } from "../../store/useLogisticsStore";
 import { formatPkr } from "../../types/domain";
 import { LoadingItemInput } from "../../types/logistics";
+import { loadSavedKhataAccounts } from "../../types/khata";
+import { loadSavedProducts } from "../../types/products";
 import {
   X,
   Trash2,
@@ -11,8 +13,8 @@ import {
   AlertTriangle,
   FileText,
   Layers,
+  UserCheck,
 } from "lucide-react";
-
 
 interface ManifestLineItem {
   productId: number;
@@ -26,7 +28,7 @@ interface ManifestLineItem {
   looseQty: number;
 }
 
-const BEVERAGE_CATALOG = [
+const FALLBACK_BEVERAGE_CATALOG = [
   {
     productId: 1,
     productSku: "NC-250-RGB",
@@ -83,9 +85,13 @@ const BEVERAGE_CATALOG = [
   },
 ];
 
-export function LoadingManifestModal() {
+export interface LoadingManifestModalProps {
+  isOpen?: boolean;
+}
+
+export function LoadingManifestModal(props: LoadingManifestModalProps = {}) {
+  const store = useLogisticsStore();
   const {
-    isLoadingManifestModalOpen,
     closeCreateManifestModal,
     routes,
     vehicles,
@@ -93,51 +99,87 @@ export function LoadingManifestModal() {
     issueManifestDispatch,
     isLoading,
     error,
-  } = useLogisticsStore();
+  } = store;
+
+  const isOpen = props?.isOpen !== undefined ? props.isOpen : store.isLoadingManifestModalOpen;
+
+  // Load Salesman Khata Accounts (category === "SALESMAN")
+  const salesmanAccounts = useMemo(() => {
+    try {
+      const allAccounts = loadSavedKhataAccounts();
+      const salesmen = allAccounts.filter((a) => a.category === "SALESMAN");
+      return salesmen.length > 0
+        ? salesmen
+        : [
+            {
+              id: 5,
+              holderName: "Muhammad Ali",
+              shopName: "City Center & Shahi Bazaar (Beat 01)",
+              villageName: "Rahim Yar Khan",
+              shopAddress: "Beat 01 Depot",
+              streetArea: "Commercial Zone",
+              mobileNumber: "0300-1112233",
+              accountOpeningDate: "2026-01-01",
+              openingBalance: 0,
+              currentBalance: 0,
+              category: "SALESMAN" as const,
+              notes: "Primary salesman for Beat 01",
+              createdAt: "2026-01-01T08:00:00Z",
+              updatedAt: "2026-01-01T08:00:00Z",
+            },
+          ];
+    } catch {
+      return [];
+    }
+  }, [isOpen]);
+
+  // Load Dynamic Beverage Catalog from System Products
+  const beverageCatalog = useMemo(() => {
+    try {
+      const products = loadSavedProducts();
+      if (products && products.length > 0) {
+        return products.map((p) => ({
+          productId: p.id,
+          productSku: p.sku,
+          productName: `${p.name} ${p.sizeLabel || ""}`.trim(),
+          packName: p.requiresCrate ? "Crate" : "Pack",
+          unitsPerPack: p.bottlesPerPack || 1,
+          wholesalePackPricePaisa: p.wholesalePackPricePaisa || 0,
+          isGlass: p.requiresCrate || false,
+        }));
+      }
+    } catch {
+      // Fallback
+    }
+    return FALLBACK_BEVERAGE_CATALOG;
+  }, [isOpen]);
 
   const [selectedRouteId, setSelectedRouteId] = useState<number>(1);
   const [selectedVehicleId, setSelectedVehicleId] = useState<number>(1);
+  const [selectedSalesmanId, setSelectedSalesmanId] = useState<number>(5);
   const [driverName, setDriverName] = useState("Muhammad Ali");
   const [helperName, setHelperName] = useState("Tariq (Conductor)");
   const [openingKm, setOpeningKm] = useState<number>(45200);
-  const [emptyCratesLoaded, setEmptyCratesLoaded] = useState<number>(20);
+  const [emptyCratesLoaded, setEmptyCratesLoaded] = useState<number>(0);
   const [notes, setNotes] = useState("");
+  const [submissionError, setSubmissionError] = useState<string | null>(null);
 
-  const [items, setItems] = useState<ManifestLineItem[]>([
-    {
-      productId: 1,
-      productSku: "NC-250-RGB",
-      productName: "Next Cola 250ml Glass Bottle",
-      packName: "Crate",
-      unitsPerPack: 24,
-      wholesalePackPricePaisa: 216000,
-      isGlass: true,
-      packQty: 50,
-      looseQty: 0,
-    },
-    {
-      productId: 2,
-      productSku: "NC-1.5-PET",
-      productName: "Next Cola 1.5L PET Bottle",
-      packName: "Pack",
-      unitsPerPack: 6,
-      wholesalePackPricePaisa: 105000,
-      isGlass: false,
-      packQty: 30,
-      looseQty: 0,
-    },
-    {
-      productId: 5,
-      productSku: "FZ-250-RGB",
-      productName: "Fizz Up Lemon 250ml Glass Bottle",
-      packName: "Crate",
-      unitsPerPack: 24,
-      wholesalePackPricePaisa: 216000,
-      isGlass: true,
-      packQty: 25,
-      looseQty: 0,
-    },
-  ]);
+  // Strict Manual Entry Control: start with clean empty state [] (Zero Pre-fill)
+  const [items, setItems] = useState<ManifestLineItem[]>([]);
+
+  // Session Isolation: Whenever modal opens, load pristine clean state (zero leakage from prior sessions)
+  useEffect(() => {
+    if (isOpen) {
+      setItems([]);
+      setNotes("");
+      setEmptyCratesLoaded(0);
+      setSubmissionError(null);
+      if (salesmanAccounts.length > 0) {
+        setSelectedSalesmanId(salesmanAccounts[0].id);
+        setDriverName(salesmanAccounts[0].holderName);
+      }
+    }
+  }, [isOpen, salesmanAccounts]);
 
   // Sync route changes
   useEffect(() => {
@@ -157,7 +199,15 @@ export function LoadingManifestModal() {
     }
   }, [selectedVehicleId, vehicles]);
 
-  if (!isLoadingManifestModalOpen) return null;
+  // Sync salesman selection
+  useEffect(() => {
+    const salesman = salesmanAccounts.find((s) => s.id === selectedSalesmanId);
+    if (salesman) {
+      setDriverName(salesman.holderName);
+    }
+  }, [selectedSalesmanId, salesmanAccounts]);
+
+  if (!isOpen) return null;
 
   const currentVehicle = vehicles.find((v) => v.id === selectedVehicleId) || vehicles[0];
   const maxCrates = currentVehicle?.capacity_crates || 120;
@@ -170,7 +220,7 @@ export function LoadingManifestModal() {
   let totalBaseBottles = 0;
 
   items.forEach((it) => {
-    const baseRate = Math.floor(it.wholesalePackPricePaisa / it.unitsPerPack);
+    const baseRate = Math.floor(it.wholesalePackPricePaisa / (it.unitsPerPack || 1));
     const lineVal = it.packQty * it.wholesalePackPricePaisa + it.looseQty * baseRate;
     totalWholesaleValuePaisa += lineVal;
 
@@ -179,9 +229,9 @@ export function LoadingManifestModal() {
 
     if (it.isGlass) {
       totalLoadedCrates += it.packQty;
-      totalEstimatedWeightKg += it.packQty * 18.0 + (it.looseQty * 18.0) / 24; // ~18kg per full glass crate
+      totalEstimatedWeightKg += it.packQty * 18.0 + (it.looseQty * 18.0) / 24;
     } else {
-      totalEstimatedWeightKg += it.packQty * 10.0 + (it.looseQty * 10.0) / it.unitsPerPack; // ~10kg per PET pack
+      totalEstimatedWeightKg += it.packQty * 10.0 + (it.looseQty * 10.0) / (it.unitsPerPack || 1);
     }
   });
 
@@ -191,35 +241,43 @@ export function LoadingManifestModal() {
   const weightPercent = Math.min(100, Math.round((totalEstimatedWeightKg * 100) / maxWeightKg));
   const isWeightOverload = totalEstimatedWeightKg > maxWeightKg;
 
+  // Explicit Product Selection: When product is added, quantity defaults strictly to 0
   const handleAddItem = (productId: number) => {
     if (items.some((it) => it.productId === productId)) return;
-    const prod = BEVERAGE_CATALOG.find((p) => p.productId === productId);
+    const prod = beverageCatalog.find((p) => p.productId === productId);
     if (!prod) return;
 
-    setItems([
-      ...items,
+    setItems((prev) => [
+      ...prev,
       {
         ...prod,
-        packQty: 10,
-        looseQty: 0,
+        packQty: 0, // Strict requirement: Default to 0
+        looseQty: 0, // Strict requirement: Default to 0
       },
     ]);
   };
 
   const handleRemoveItem = (productId: number) => {
-    setItems(items.filter((it) => it.productId !== productId));
+    setItems((prev) => prev.filter((it) => it.productId !== productId));
   };
 
-  const handleUpdateQty = (productId: number, field: "packQty" | "looseQty", value: number) => {
-    setItems(
-      items.map((it) =>
-        it.productId === productId ? { ...it, [field]: Math.max(0, value) } : it
+  // Clean Overwrite Entry: Parses input and strictly overwrites prior value without appending
+  const handleUpdateQty = (productId: number, field: "packQty" | "looseQty", rawVal: string) => {
+    const numericVal = Math.max(0, parseInt(rawVal, 10) || 0);
+    setItems((prev) =>
+      prev.map((it) =>
+        it.productId === productId ? { ...it, [field]: numericVal } : it
       )
     );
   };
 
-  const buildDto = () => {
-    const itemInputs: LoadingItemInput[] = items.map((it) => ({
+  // Completely exclude unentered or zero-quantity items from saved records
+  const getNonZeroItems = () => {
+    return items.filter((it) => it.packQty > 0 || it.looseQty > 0);
+  };
+
+  const buildDto = (validItems: ManifestLineItem[]) => {
+    const itemInputs: LoadingItemInput[] = validItems.map((it) => ({
       product_id: it.productId,
       pack_qty: it.packQty,
       loose_qty: it.looseQty,
@@ -230,6 +288,7 @@ export function LoadingManifestModal() {
       sheet_date: new Date().toISOString().slice(0, 10),
       vehicle_id: selectedVehicleId,
       vehicle_number: currentVehicle?.vehicle_number || "LES-2489",
+      driver_id: selectedSalesmanId,
       driver_name: driverName,
       helper_name: helperName,
       opening_km: openingKm,
@@ -240,12 +299,24 @@ export function LoadingManifestModal() {
   };
 
   const handleSaveDraft = async () => {
-    const dto = buildDto();
+    const validItems = getNonZeroItems();
+    if (validItems.length === 0) {
+      setSubmissionError("Please add at least one product with quantity greater than zero before saving draft.");
+      return;
+    }
+    setSubmissionError(null);
+    const dto = buildDto(validItems);
     await createManifestDraft(dto);
   };
 
   const handleIssueDispatch = async () => {
-    const dto = buildDto();
+    const validItems = getNonZeroItems();
+    if (validItems.length === 0) {
+      setSubmissionError("Please enter quantities greater than zero before issuing dispatch.");
+      return;
+    }
+    setSubmissionError(null);
+    const dto = buildDto(validItems);
     const sheet = await createManifestDraft(dto);
     await issueManifestDispatch({
       sheet_id: sheet.id,
@@ -254,6 +325,8 @@ export function LoadingManifestModal() {
       departure_time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
     });
   };
+
+  const nonZeroCount = getNonZeroItems().length;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
@@ -267,7 +340,7 @@ export function LoadingManifestModal() {
             <div>
               <h2 className="text-base font-bold">Morning Route Loading Manifest & Gate Pass</h2>
               <p className="text-xs text-slate-400">
-                Vehicle Stock Transfer (Warehouse Loc 1 $\to$ Van Mobile Loc 2)
+                صبح مال ڈسپیچ • Warehouse Stock Transfer (Loc 1 $\to$ Van Mobile Loc 2)
               </p>
             </div>
           </div>
@@ -281,7 +354,7 @@ export function LoadingManifestModal() {
 
         {/* Form Body */}
         <div className="p-6 overflow-y-auto space-y-5 text-xs flex-1">
-          {/* Top Route & Crew Details */}
+          {/* Top Route & Salesman Khata Details */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-800/60 p-4 rounded-xl border border-slate-700/80">
             <div className="space-y-1">
               <label className="text-slate-400 font-semibold block">Delivery Route (Beat)</label>
@@ -313,8 +386,27 @@ export function LoadingManifestModal() {
               </select>
             </div>
 
+            {/* Salesman Selection Dropdown from KhataAccounts (category === "SALESMAN") */}
             <div className="space-y-1">
-              <label className="text-slate-400 font-semibold block">Assigned Driver</label>
+              <label className="text-cyan-400 font-semibold block flex items-center space-x-1.5">
+                <UserCheck className="w-3.5 h-3.5" />
+                <span>Salesman / Driver (سیلز مین کھاتہ)</span>
+              </label>
+              <select
+                value={selectedSalesmanId}
+                onChange={(e) => setSelectedSalesmanId(Number(e.target.value))}
+                className="w-full bg-slate-800 border border-cyan-500/60 rounded-lg p-2 text-white font-medium outline-none focus:border-cyan-400"
+              >
+                {salesmanAccounts.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.holderName} — {s.shopName}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-slate-400 font-semibold block">Driver Name (Manifest Line)</label>
               <input
                 type="text"
                 value={driverName}
@@ -343,18 +435,17 @@ export function LoadingManifestModal() {
               />
             </div>
 
-            <div className="space-y-1">
+            <div className="space-y-1 md:col-span-3">
               <label className="text-slate-400 font-semibold block">Manifest Notes</label>
               <input
                 type="text"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                placeholder="Optional delivery notes"
+                placeholder="Optional delivery notes / morning gate pass remarks"
                 className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-white outline-none focus:border-cyan-500"
               />
             </div>
           </div>
-
 
           {/* Vehicle Capacity Gauges */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -421,29 +512,33 @@ export function LoadingManifestModal() {
             </div>
           </div>
 
-          {/* Loading Manifest Table */}
+          {/* Loading Manifest Table with Explicit Product Selection */}
           <div className="space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="font-bold text-white text-xs flex items-center space-x-2">
                 <FileText className="w-4 h-4 text-cyan-400" />
-                <span>Loaded Beverage SKUs ({items.length} Products, {totalBaseBottles} Bottles)</span>
+                <span>
+                  Loaded Beverage SKUs ({items.length} Selected, {nonZeroCount} Active, {totalBaseBottles} Bottles)
+                </span>
               </span>
 
-              {/* Add SKU Dropdown */}
+              {/* Explicit Product Selection Dropdown */}
               <div className="flex items-center space-x-2">
                 <select
                   onChange={(e) => {
                     if (e.target.value) handleAddItem(Number(e.target.value));
                     e.target.value = "";
                   }}
-                  className="bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1 text-slate-200 outline-none"
+                  className="bg-slate-800 border border-cyan-500/50 rounded-lg px-2.5 py-1.5 text-cyan-300 font-medium outline-none focus:border-cyan-400"
                 >
-                  <option value="">+ Add Beverage SKU...</option>
-                  {BEVERAGE_CATALOG.filter((b) => !items.some((it) => it.productId === b.productId)).map((b) => (
-                    <option key={b.productId} value={b.productId}>
-                      {b.productSku}: {b.productName}
-                    </option>
-                  ))}
+                  <option value="">+ Add Beverage SKU (پروڈکٹ منتخب کریں)...</option>
+                  {beverageCatalog
+                    .filter((b) => !items.some((it) => it.productId === b.productId))
+                    .map((b) => (
+                      <option key={b.productId} value={b.productId}>
+                        {b.productSku}: {b.productName} ({b.packName} of {b.unitsPerPack})
+                      </option>
+                    ))}
                 </select>
               </div>
             </div>
@@ -463,63 +558,81 @@ export function LoadingManifestModal() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800 bg-slate-900/60">
-                  {items.map((it) => {
-                    const baseRate = Math.floor(it.wholesalePackPricePaisa / it.unitsPerPack);
-                    const lineVal = it.packQty * it.wholesalePackPricePaisa + it.looseQty * baseRate;
-                    const btls = it.packQty * it.unitsPerPack + it.looseQty;
-
-                    return (
-                      <tr key={it.productId} className="hover:bg-slate-800/40">
-                        <td className="p-3">
-                          <span className="font-bold text-white block">{it.productName}</span>
-                          <span className="text-[10px] text-cyan-400">{it.productSku}</span>
-                        </td>
-                        <td className="p-3">
-                          <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300">
-                            {it.packName} of {it.unitsPerPack}
+                  {items.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="p-8 text-center text-slate-400 font-sans">
+                        <div className="flex flex-col items-center justify-center space-y-1">
+                          <span className="font-semibold text-slate-300">
+                            No products added yet (کوئی پراڈکٹ منتخب نہیں کی گئی)
                           </span>
-                        </td>
-                        <td className="p-3 text-center">
-                          <input
-                            type="number"
-                            min="0"
-                            value={it.packQty}
-                            onChange={(e) =>
-                              handleUpdateQty(it.productId, "packQty", parseInt(e.target.value) || 0)
-                            }
-                            className="w-16 text-center bg-slate-800 border border-slate-700 rounded p-1 text-white font-bold"
-                          />
-                        </td>
-                        <td className="p-3 text-center">
-                          <input
-                            type="number"
-                            min="0"
-                            value={it.looseQty}
-                            onChange={(e) =>
-                              handleUpdateQty(it.productId, "looseQty", parseInt(e.target.value) || 0)
-                            }
-                            className="w-14 text-center bg-slate-800 border border-slate-700 rounded p-1 text-white"
-                          />
-                        </td>
-                        <td className="p-3 text-right font-bold text-slate-200">{btls}</td>
-                        <td className="p-3 text-right text-slate-400">
-                          {formatPkr(it.wholesalePackPricePaisa)}
-                        </td>
-                        <td className="p-3 text-right font-bold text-emerald-400">
-                          {formatPkr(lineVal)}
-                        </td>
-                        <td className="p-3 text-center">
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveItem(it.productId)}
-                            className="text-slate-400 hover:text-red-400 p-1"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                          <span className="text-slate-500 text-[11px]">
+                            Use the &quot;+ Add Beverage SKU...&quot; dropdown above to add products. Initial quantity defaults to 0.
+                          </span>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    items.map((it) => {
+                      const baseRate = Math.floor(it.wholesalePackPricePaisa / (it.unitsPerPack || 1));
+                      const lineVal = it.packQty * it.wholesalePackPricePaisa + it.looseQty * baseRate;
+                      const btls = it.packQty * it.unitsPerPack + it.looseQty;
+
+                      return (
+                        <tr key={it.productId} className="hover:bg-slate-800/40">
+                          <td className="p-3">
+                            <span className="font-bold text-white block">{it.productName}</span>
+                            <span className="text-[10px] text-cyan-400">{it.productSku}</span>
+                          </td>
+                          <td className="p-3">
+                            <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300">
+                              {it.packName} of {it.unitsPerPack}
+                            </span>
+                          </td>
+                          <td className="p-3 text-center">
+                            <input
+                              type="number"
+                              min="0"
+                              value={it.packQty === 0 ? "" : it.packQty}
+                              placeholder="0"
+                              onChange={(e) =>
+                                handleUpdateQty(it.productId, "packQty", e.target.value)
+                              }
+                              className="w-16 text-center bg-slate-800 border border-slate-700 rounded p-1 text-white font-bold outline-none focus:border-cyan-500"
+                            />
+                          </td>
+                          <td className="p-3 text-center">
+                            <input
+                              type="number"
+                              min="0"
+                              value={it.looseQty === 0 ? "" : it.looseQty}
+                              placeholder="0"
+                              onChange={(e) =>
+                                handleUpdateQty(it.productId, "looseQty", e.target.value)
+                              }
+                              className="w-14 text-center bg-slate-800 border border-slate-700 rounded p-1 text-white outline-none focus:border-cyan-500"
+                            />
+                          </td>
+                          <td className="p-3 text-right font-bold text-slate-200">{btls}</td>
+                          <td className="p-3 text-right text-slate-400">
+                            {formatPkr(it.wholesalePackPricePaisa)}
+                          </td>
+                          <td className="p-3 text-right font-bold text-emerald-400">
+                            {formatPkr(lineVal)}
+                          </td>
+                          <td className="p-3 text-center">
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveItem(it.productId)}
+                              className="text-slate-400 hover:text-red-400 p-1"
+                              title="Remove item"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
                 </tbody>
               </table>
             </div>
@@ -539,11 +652,12 @@ export function LoadingManifestModal() {
               <input
                 type="number"
                 min="0"
-                value={emptyCratesLoaded}
-                onChange={(e) => setEmptyCratesLoaded(Math.max(0, parseInt(e.target.value) || 0))}
-                className="w-24 text-center bg-slate-800 border border-slate-700 rounded-lg p-2 text-amber-400 font-mono font-bold text-sm outline-none"
+                value={emptyCratesLoaded === 0 ? "" : emptyCratesLoaded}
+                placeholder="0"
+                onChange={(e) => setEmptyCratesLoaded(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                className="w-24 text-center bg-slate-800 border border-slate-700 rounded-lg p-2 text-amber-400 font-mono font-bold text-sm outline-none focus:border-amber-400"
               />
-              <span className="text-slate-400">Crates</span>
+              <span className="text-slate-400 font-medium">Crates</span>
             </div>
           </div>
 
@@ -561,6 +675,13 @@ export function LoadingManifestModal() {
             </div>
           </div>
 
+          {submissionError && (
+            <div className="p-3 bg-red-950/60 border border-red-500/50 rounded-lg text-red-200 text-xs flex items-center space-x-2">
+              <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+              <span>{submissionError}</span>
+            </div>
+          )}
+
           {error && (
             <div className="p-3 bg-red-950/60 border border-red-500/50 rounded-lg text-red-200 text-xs">
               {error}
@@ -571,7 +692,7 @@ export function LoadingManifestModal() {
         {/* Footer Action Buttons */}
         <div className="bg-slate-800 px-6 py-4 border-t border-slate-700 flex items-center justify-between">
           <div className="text-[11px] text-slate-400">
-            Draft creation does not deduct warehouse stock. Dispatching transfers stock to van.
+            Draft creation does not deduct warehouse stock. Dispatching transfers stock to van and deducts warehouse inventory.
           </div>
           <div className="flex space-x-3">
             <button
@@ -582,15 +703,15 @@ export function LoadingManifestModal() {
             </button>
             <button
               onClick={handleSaveDraft}
-              disabled={isLoading || items.length === 0}
-              className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-cyan-300 border border-cyan-500/50 font-bold rounded-lg transition"
+              disabled={isLoading || nonZeroCount === 0}
+              className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-cyan-300 border border-cyan-500/50 font-bold rounded-lg transition disabled:opacity-40"
             >
               Save Draft
             </button>
             <button
               onClick={handleIssueDispatch}
-              disabled={isLoading || items.length === 0}
-              className="flex items-center space-x-2 px-5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold rounded-lg shadow-lg transition"
+              disabled={isLoading || nonZeroCount === 0}
+              className="flex items-center space-x-2 px-5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold rounded-lg shadow-lg transition disabled:opacity-40"
             >
               <CheckCircle className="w-4 h-4" />
               <span>Issue Dispatch & Print Gate Pass</span>

@@ -45,7 +45,15 @@ export const useReportStore = create<ReportState>((set, get) => ({
       set({ activeReportId: null, activeReport: null, reportData: [], summaryKpis: [] });
       return;
     }
-    const found = ALL_REPORTS.find((r) => r.id === id) || null;
+    const aliasMap: Record<string, string> = {
+      "REP-DISPATCH-01": "REP-31",
+      "REP-RETURN-02": "REP-32",
+      "REP-SALES-03": "REP-33",
+      "REP-SETTLE-04": "REP-34",
+      "REP-KHATA-05": "REP-35",
+    };
+    const targetId = aliasMap[id] || id;
+    const found = ALL_REPORTS.find((r) => r.id === id || r.id === targetId) || null;
     set({ activeReportId: id, activeReport: found, error: null });
     get().loadActiveReportData();
   },
@@ -443,6 +451,91 @@ export const useReportStore = create<ReportState>((set, get) => ({
           data = res.logs as unknown as Record<string, unknown>[];
           kpis = [
             { label: "Audit Events Logged", value: res.total_count, format: "integer" },
+          ];
+          break;
+        }
+
+        case "REP-DISPATCH-01":
+        case "REP-31": {
+          const res = await reportService.getMorningDispatchReport(p);
+          data = res as unknown as Record<string, unknown>[];
+          const totalDispatches = res.length;
+          const totalPacks = res.reduce((acc, r) => acc + (r.loaded_packs || 0), 0);
+          const totalBottles = res.reduce((acc, r) => acc + (r.total_base_units || 0), 0);
+          const totalValue = res.reduce((acc, r) => acc + (r.total_wholesale_value_paisa || 0), 0);
+          kpis = [
+            { label: "Total Dispatches", value: totalDispatches, format: "integer" },
+            { label: "Loaded Packs", value: totalPacks, format: "integer" },
+            { label: "Total Bottles Loaded", value: totalBottles, format: "integer" },
+            { label: "Wholesale Value", value: totalValue, format: "currency" },
+          ];
+          break;
+        }
+
+        case "REP-RETURN-02":
+        case "REP-32": {
+          const res = await reportService.getEveningReturnReport(p);
+          data = res as unknown as Record<string, unknown>[];
+          const totalReturns = res.length;
+          const totalSold = res.reduce((acc, r) => acc + (r.total_sold_base || 0), 0);
+          const totalIntact = res.reduce((acc, r) => acc + (r.total_returned_intact_base || 0), 0);
+          const totalCrateVariance = res.reduce((acc, r) => acc + (r.crate_discrepancy || 0), 0);
+          kpis = [
+            { label: "Returns Reconciled", value: totalReturns, format: "integer" },
+            { label: "Total Sold Units", value: totalSold, format: "integer" },
+            { label: "Restocked Intact", value: totalIntact, format: "integer" },
+            { label: "Crate Discrepancy", value: totalCrateVariance, format: "integer" },
+          ];
+          break;
+        }
+
+        case "REP-SALES-03":
+        case "REP-33": {
+          const res = await reportService.getDailyTotalSalesReport(p);
+          data = res as unknown as Record<string, unknown>[];
+          const grossTotal = res.reduce((acc, r) => acc + (r.gross_revenue_paisa || 0), 0);
+          const counterUnits = res.reduce((acc, r) => acc + (r.counter_units_sold || 0), 0);
+          const salesmanUnits = res.reduce((acc, r) => acc + (r.salesman_units_sold || 0), 0);
+          const cashCollected = res.reduce((acc, r) => acc + (r.cash_collected_paisa || 0), 0);
+          kpis = [
+            { label: "Gross Sales Revenue", value: grossTotal, format: "currency" },
+            { label: "Counter POS Units", value: counterUnits, format: "integer" },
+            { label: "Salesman Route Units", value: salesmanUnits, format: "integer" },
+            { label: "Cash Collected", value: cashCollected, format: "currency" },
+          ];
+          break;
+        }
+
+        case "REP-SETTLE-04":
+        case "REP-34": {
+          const res = await reportService.getSalesmanSettlementReport(p);
+          data = res as unknown as Record<string, unknown>[];
+          const totalGross = res.reduce((acc, r) => acc + (r.gross_sales_paisa || 0), 0);
+          const totalCash = res.reduce((acc, r) => acc + (r.cash_deposited_paisa || 0), 0);
+          const totalUnpaid = res.reduce((acc, r) => acc + (r.unpaid_balance_paisa || 0), 0);
+          const totalBreakage = res.reduce((acc, r) => acc + (r.breakage_value_paisa || 0), 0);
+          kpis = [
+            { label: "Route Gross Sales", value: totalGross, format: "currency" },
+            { label: "Cash Deposited", value: totalCash, format: "currency" },
+            { label: "Unpaid Khata Balance", value: totalUnpaid, format: "currency" },
+            { label: "Breakage Loss", value: totalBreakage, format: "currency" },
+          ];
+          break;
+        }
+
+        case "REP-KHATA-05":
+        case "REP-35": {
+          const res = await reportService.getOutstandingKhataReport(p);
+          data = res as unknown as Record<string, unknown>[];
+          const totalAccounts = res.length;
+          const totalDebits = res.reduce((acc, r) => acc + (r.total_debits_paisa || 0), 0);
+          const totalCredits = res.reduce((acc, r) => acc + (r.total_credits_paisa || 0), 0);
+          const netBalance = res.reduce((acc, r) => acc + (r.current_balance_paisa || 0), 0);
+          kpis = [
+            { label: "Total Accounts", value: totalAccounts, format: "integer" },
+            { label: "Total Debits (Udhaar)", value: totalDebits, format: "currency" },
+            { label: "Recoveries (Credits)", value: totalCredits, format: "currency" },
+            { label: "Net Outstanding Due", value: netBalance, format: "currency" },
           ];
           break;
         }

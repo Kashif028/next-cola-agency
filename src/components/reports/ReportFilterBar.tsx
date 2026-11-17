@@ -94,6 +94,48 @@ export function ReportFilterBar({ report }: ReportFilterBarProps) {
           </div>
         )}
 
+        {/* Salesman Filter if supported */}
+        {report.filterFields?.includes("salesman") && (
+          <div className="flex items-center space-x-1.5">
+            <span className="text-slate-400">Salesman:</span>
+            <select
+              value={filterParams.salesmanName || "ALL"}
+              onChange={(e) =>
+                setFilterParams({
+                  salesmanName: e.target.value === "ALL" ? undefined : e.target.value,
+                })
+              }
+              className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1 text-white outline-none max-w-[180px] truncate"
+            >
+              <option value="ALL">All Salesmen</option>
+              <option value="Muhammad Ali">Muhammad Ali</option>
+              <option value="Rashid Mahmood">Rashid Mahmood</option>
+              <option value="Imran Khan">Imran Khan</option>
+            </select>
+          </div>
+        )}
+
+        {/* Category Filter if supported */}
+        {report.filterFields?.includes("category") && (
+          <div className="flex items-center space-x-1.5">
+            <span className="text-slate-400">Category:</span>
+            <select
+              value={filterParams.category || "ALL"}
+              onChange={(e) =>
+                setFilterParams({
+                  category: e.target.value === "ALL" ? undefined : e.target.value,
+                })
+              }
+              className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1 text-white outline-none"
+            >
+              <option value="ALL">All Categories</option>
+              <option value="RETAILER">Retailers (دکاندار)</option>
+              <option value="SALESMAN">Salesmen (سیلز مین)</option>
+              <option value="VILLAGE_KIRAYANA">Village Kiryana (دیہاتی کریانہ)</option>
+            </select>
+          </div>
+        )}
+
         {/* Refresh button */}
         <button
           onClick={() => loadActiveReportData()}

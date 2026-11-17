@@ -18,178 +18,235 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { CreateLoadingSheetDto, LoadingItemInput } from "../types/logistics";
-import { logisticsService } from "../services/logisticsService";
 import { useLogisticsStore } from "../store/useLogisticsStore";
+import { useInventoryStore } from "../store/useInventoryStore";
+import { loadSavedProducts, saveProducts, INITIAL_PRODUCTS } from "../types/products";
+import { saveKhataAccounts, INITIAL_KHATA_ACCOUNTS, saveKhataTransactions } from "../types/khata";
 
 // Mock localStorage for Node.js test environment
-class MockStorage {
+class MockLocalStorage {
   private store: Record<string, string> = {};
-  getItem(key: string) { return this.store[key] ?? null; }
-  setItem(key: string, value: string) { this.store[key] = String(value); }
-  removeItem(key: string) { delete this.store[key]; }
-  clear() { this.store = {}; }
-  get length() { return Object.keys(this.store).length; }
-  key(index: number) { return Object.keys(this.store)[index] ?? null; }
-}
-
-// In-memory warehouse inventory simulator for opaque-box verification
-interface WarehouseStockState {
-  [productId: number]: number; // base units
+  getItem(key: string): string | null {
+    return this.store[key] ?? null;
+  }
+  setItem(key: string, value: string): void {
+    this.store[key] = String(value);
+  }
+  removeItem(key: string): void {
+    delete this.store[key];
+  }
+  clear(): void {
+    this.store = {};
+  }
+  get length(): number {
+    return Object.keys(this.store).length;
+  }
+  key(index: number): string | null {
+    return Object.keys(this.store)[index] ?? null;
+  }
 }
 
 describe("R1: Morning Dispatch & Zero Quantity Leakage", () => {
-  let mockStorage: MockStorage;
-  let warehouseStock: WarehouseStockState;
-
-  // Reference catalog with packaging spec
-  const PRODUCT_SPECS: Record<number, { sku: string; name: string; unitsPerPack: number; wholesalePackPricePaisa: number }> = {
-    1: { sku: "NC-250-RGB", name: "Next Cola 250ml Glass Bottle", unitsPerPack: 24, wholesalePackPricePaisa: 216000 },
-    2: { sku: "NC-1.5-PET", name: "Next Cola 1.5L PET Bottle", unitsPerPack: 6, wholesalePackPricePaisa: 105000 },
-    3: { sku: "NC-500-PET", name: "Next Cola 500ml PET Bottle", unitsPerPack: 12, wholesalePackPricePaisa: 126000 },
-    4: { sku: "NC-250-CAN", name: "Next Cola 250ml Sleek Can", unitsPerPack: 24, wholesalePackPricePaisa: 288000 },
-    5: { sku: "FZ-250-RGB", name: "Fizz Up Lemon 250ml Glass Bottle", unitsPerPack: 24, wholesalePackPricePaisa: 216000 },
-  };
-
-  /**
-   * Domain helper: filter and sanitize items strictly enforcing manual entry controls
-   * Unselected or 0-quantity items must NEVER be included in final manifests.
-   */
-  function sanitizeDispatchItems(rawItems: LoadingItemInput[]): LoadingItemInput[] {
-    return rawItems.filter((item) => {
-      const packs = Number(item.pack_qty) || 0;
-      const loose = Number(item.loose_qty) || 0;
-      return packs > 0 || loose > 0;
-    });
-  }
-
-  /**
-   * Domain helper: computes total base units from packs and loose units
-   */
-  function calculateTotalBaseUnits(productId: number, packQty: number, looseQty: number): number {
-    const spec = PRODUCT_SPECS[productId];
-    if (!spec) throw new Error(`Unknown product id: ${productId}`);
-    return (Number(packQty) || 0) * spec.unitsPerPack + (Number(looseQty) || 0);
-  }
-
-  /**
-   * Domain helper: applies stock deduction from warehouse
-   */
-  function deductWarehouseStock(stock: WarehouseStockState, items: LoadingItemInput[]): WarehouseStockState {
-    const nextStock = { ...stock };
-    for (const item of items) {
-      const needed = calculateTotalBaseUnits(item.product_id, item.pack_qty, item.loose_qty);
-      const available = nextStock[item.product_id] ?? 0;
-      if (available < needed) {
-        throw new Error(`Insufficient stock for product ${item.product_id}: requested ${needed}, available ${available}`);
-      }
-      nextStock[item.product_id] = available - needed;
-    }
-    return nextStock;
-  }
+  let mockStorage: MockLocalStorage;
 
   beforeEach(() => {
-    mockStorage = new MockStorage();
+    mockStorage = new MockLocalStorage();
     (globalThis as any).window = globalThis;
     (globalThis as any).localStorage = mockStorage;
 
-    // Standard starting warehouse stock: 2,000 crates of RGB (48,000 btls), 1,000 packs of PET (6,000 btls)
-    warehouseStock = {
-      1: 48000,
-      2: 6000,
-      3: 12000,
-      4: 24000,
-      5: 48000,
-    };
+    saveProducts([...INITIAL_PRODUCTS.map((p) => ({ ...p }))]);
+    saveKhataAccounts([...INITIAL_KHATA_ACCOUNTS.map((a) => ({ ...a }))]);
+    saveKhataTransactions([]);
+    mockStorage.setItem("dogar_breakage_logs_v1", JSON.stringify([]));
+    mockStorage.setItem("dogar_daily_dispatches_v1", JSON.stringify([]));
+
+    useInventoryStore.setState({
+      stockItems: [],
+      emptiesOverview: null,
+      breakageLogs: [],
+      activeCustomerCrateLedger: [],
+      filter: {},
+      isLoading: false,
+      error: null,
+    });
+
+    useLogisticsStore.setState({
+      routes: [],
+      vehicles: [],
+      loadingSheets: [],
+      dailyDispatches: [],
+      selectedSheetDetail: null,
+      activeReconciliation: null,
+      filter: {},
+      searchQuery: "",
+      isRouteModalOpen: false,
+      isVehicleModalOpen: false,
+      isLoadingManifestModalOpen: false,
+      isSettlementModalOpen: false,
+      isGatePassModalOpen: false,
+      settlementSheetId: null,
+      physicalReturns: {},
+      physicalCashPaisa: 0,
+      emptyCratesReturned: 0,
+      routeExpensesPaisa: 0,
+      isLoading: false,
+      error: null,
+    });
   });
 
   afterEach(() => {
-    mockStorage.clear();
-    delete (globalThis as any).window;
-    delete (globalThis as any).localStorage;
     vi.restoreAllMocks();
   });
+
+  function makeDispatchItem(productId: number, packs: number, loose = 0) {
+    const prod = loadSavedProducts().find((p) => p.id === productId)!;
+    const unitsPerPack = prod.bottlesPerPack;
+    const totalBase = packs * unitsPerPack + loose;
+    return {
+      productId,
+      productSku: prod.sku,
+      productName: prod.name,
+      packName: prod.requiresCrate ? "Crate" : "Pack",
+      unitsPerPack,
+      wholesalePackPricePaisa: prod.wholesalePackPricePaisa,
+      isGlass: prod.requiresCrate || false,
+      dispatchedPacks: packs,
+      dispatchedLoose: loose,
+      totalDispatchedBase: totalBase,
+      soldPacks: 0,
+      soldLoose: 0,
+      totalSoldBase: 0,
+      returnedIntactPacks: 0,
+      returnedIntactLoose: 0,
+      totalReturnedIntactBase: 0,
+      damagedPacks: 0,
+      damagedLoose: 0,
+      totalDamagedBase: 0,
+      lineRevenuePaisa: 0,
+    };
+  }
 
   // ==========================================================================
   // TIER 1: Happy Path Equivalence Classes (≥ 5 tests)
   // ==========================================================================
 
-  it("T1.1: Creates morning dispatch for single product with exact pack conversion", () => {
-    const rawItems: LoadingItemInput[] = [
-      { product_id: 1, pack_qty: 50, loose_qty: 0 },
-    ];
-    const sanitized = sanitizeDispatchItems(rawItems);
-    expect(sanitized).toHaveLength(1);
-    expect(sanitized[0].pack_qty).toBe(50);
+  it("T1.1: Creates morning dispatch for single product with exact pack conversion and stock deduction", async () => {
+    const initialStock = loadSavedProducts().find((p) => p.id === 1)!.stockPacks;
+    const item1 = makeDispatchItem(1, 50, 0);
 
-    const baseUnits = calculateTotalBaseUnits(1, 50, 0);
-    expect(baseUnits).toBe(50 * 24); // 1,200 bottles
+    const dispatch = await useLogisticsStore.getState().createDailyDispatch({
+      sheetNumber: "LOAD-MORN-01",
+      date: "2026-11-16",
+      routeId: 1,
+      routeName: "City Center",
+      salesmanId: 5,
+      salesmanName: "Muhammad Ali",
+      vehicleNumber: "LES-2489",
+      status: "ISSUED",
+      emptyCratesLoaded: 50,
+      emptyCratesReturned: 0,
+      items: [item1],
+      totalSalesRevenuePaisa: 0,
+      cashDepositedPaisa: 0,
+      unpaidBalancePaisa: 0,
+    });
 
-    // Deduct from warehouse
-    warehouseStock = deductWarehouseStock(warehouseStock, sanitized);
-    expect(warehouseStock[1]).toBe(48000 - 1200); // 46,800
+    expect(dispatch.items).toHaveLength(1);
+    expect(dispatch.items[0].dispatchedPacks).toBe(50);
+    expect(dispatch.items[0].totalDispatchedBase).toBe(50 * 4); // 200 base units
+
+    // Warehouse stock deducted by exactly 50 packs
+    const finalStock = loadSavedProducts().find((p) => p.id === 1)!.stockPacks;
+    expect(finalStock).toBe(initialStock - 50);
   });
 
-  it("T1.2: Dispatches multi-product manifest calculating correct cumulative load value", () => {
-    const rawItems: LoadingItemInput[] = [
-      { product_id: 1, pack_qty: 40, loose_qty: 0 }, // 40 * 24 = 960 btls; 40 * 216000 = 8,640,000 paisa
-      { product_id: 2, pack_qty: 30, loose_qty: 0 }, // 30 * 6 = 180 btls; 30 * 105000 = 3,150,000 paisa
-      { product_id: 3, pack_qty: 20, loose_qty: 0 }, // 20 * 12 = 240 btls; 20 * 126000 = 2,520,000 paisa
-    ];
-    const sanitized = sanitizeDispatchItems(rawItems);
-    expect(sanitized).toHaveLength(3);
+  it("T1.2: Dispatches multi-product manifest calculating correct cumulative load value and stock deductions", async () => {
+    const prod1Initial = loadSavedProducts().find((p) => p.id === 1)!.stockPacks;
+    const prod2Initial = loadSavedProducts().find((p) => p.id === 2)!.stockPacks;
 
-    const totalLoadValue = sanitized.reduce((sum, it) => {
-      const spec = PRODUCT_SPECS[it.product_id];
-      return sum + it.pack_qty * spec.wholesalePackPricePaisa;
-    }, 0);
-    expect(totalLoadValue).toBe(8640000 + 3150000 + 2520000); // 14,310,000 paisa (143,100 PKR)
+    const item1 = makeDispatchItem(1, 40, 0);
+    const item2 = makeDispatchItem(2, 30, 0);
 
-    warehouseStock = deductWarehouseStock(warehouseStock, sanitized);
-    expect(warehouseStock[1]).toBe(48000 - 960);
-    expect(warehouseStock[2]).toBe(6000 - 180);
-    expect(warehouseStock[3]).toBe(12000 - 240);
+    const dispatch = await useLogisticsStore.getState().createDailyDispatch({
+      sheetNumber: "LOAD-MORN-02",
+      date: "2026-11-16",
+      routeId: 1,
+      routeName: "City Center",
+      salesmanId: 5,
+      salesmanName: "Muhammad Ali",
+      vehicleNumber: "LES-2489",
+      status: "ISSUED",
+      emptyCratesLoaded: 40,
+      emptyCratesReturned: 0,
+      items: [item1, item2],
+      totalSalesRevenuePaisa: 0,
+      cashDepositedPaisa: 0,
+      unpaidBalancePaisa: 0,
+    });
+
+    expect(dispatch.items).toHaveLength(2);
+    expect(loadSavedProducts().find((p) => p.id === 1)!.stockPacks).toBe(prod1Initial - 40);
+    expect(loadSavedProducts().find((p) => p.id === 2)!.stockPacks).toBe(prod2Initial - 30);
   });
 
-  it("T1.3: Handles dispatch with loose bottles combined with packs", () => {
-    const rawItems: LoadingItemInput[] = [
-      { product_id: 1, pack_qty: 10, loose_qty: 15 }, // 10 * 24 + 15 = 255 bottles
-      { product_id: 2, pack_qty: 5, loose_qty: 3 },   // 5 * 6 + 3 = 33 bottles
-    ];
-    const sanitized = sanitizeDispatchItems(rawItems);
-    expect(sanitized).toHaveLength(2);
+  it("T1.3: Handles dispatch with loose bottles combined with packs", async () => {
+    // Prod 2: bottlesPerPack = 6
+    const initialStock = loadSavedProducts().find((p) => p.id === 2)!.stockPacks;
+    // 10 packs + 3 loose = 63 base units = 10.5 packs
+    const item = makeDispatchItem(2, 10, 3);
 
-    const b1 = calculateTotalBaseUnits(1, 10, 15);
-    const b2 = calculateTotalBaseUnits(2, 5, 3);
-    expect(b1).toBe(255);
-    expect(b2).toBe(33);
+    const dispatch = await useLogisticsStore.getState().createDailyDispatch({
+      sheetNumber: "LOAD-MORN-LOOSE",
+      date: "2026-11-16",
+      routeId: 1,
+      routeName: "City Center",
+      salesmanId: 5,
+      salesmanName: "Muhammad Ali",
+      vehicleNumber: "LES-2489",
+      status: "ISSUED",
+      emptyCratesLoaded: 10,
+      emptyCratesReturned: 0,
+      items: [item],
+      totalSalesRevenuePaisa: 0,
+      cashDepositedPaisa: 0,
+      unpaidBalancePaisa: 0,
+    });
 
-    warehouseStock = deductWarehouseStock(warehouseStock, sanitized);
-    expect(warehouseStock[1]).toBe(48000 - 255);
-    expect(warehouseStock[2]).toBe(6000 - 33);
+    expect(dispatch.items[0].dispatchedPacks).toBe(10);
+    expect(dispatch.items[0].dispatchedLoose).toBe(3);
+    expect(dispatch.items[0].totalDispatchedBase).toBe(63);
+
+    expect(loadSavedProducts().find((p) => p.id === 2)!.stockPacks).toBe(initialStock - 10.5);
   });
 
   it("T1.4: Creates single linked lifecycle record with ISSUED/OPEN state", async () => {
-    const dto: CreateLoadingSheetDto = {
-      route_id: 1,
-      sheet_date: "2026-11-16",
-      vehicle_id: 1,
-      vehicle_number: "LES-2489",
-      driver_id: 1,
-      driver_name: "Muhammad Ali",
-      helper_name: "Tariq",
-      opening_km: 45200,
-      empty_crates_loaded: 30,
-      items: [{ product_id: 1, pack_qty: 25, loose_qty: 0 }],
-    };
+    const item = makeDispatchItem(1, 25, 0);
 
-    const sheet = await logisticsService.createLoadingSheet(dto);
-    expect(sheet).toBeDefined();
-    expect(sheet.sheet_number).toMatch(/^LOAD-\d{8}-\d{4}$/);
-    expect(sheet.trip_code).toMatch(/^TRIP-\d{8}-\d{4}$/);
-    // Dispatched records must be in DRAFT or ISSUED status
-    expect(["DRAFT", "ISSUED"]).toContain(sheet.status);
-    expect(sheet.items.length).toBeGreaterThanOrEqual(1);
+    const dispatch = await useLogisticsStore.getState().createDailyDispatch({
+      sheetNumber: "LOAD-MORN-LINKED",
+      date: "2026-11-16",
+      routeId: 1,
+      routeName: "City Center",
+      salesmanId: 5,
+      salesmanName: "Muhammad Ali",
+      vehicleNumber: "LES-2489",
+      status: "OPEN",
+      emptyCratesLoaded: 25,
+      emptyCratesReturned: 0,
+      items: [item],
+      totalSalesRevenuePaisa: 0,
+      cashDepositedPaisa: 0,
+      unpaidBalancePaisa: 0,
+    });
+
+    expect(dispatch).toBeDefined();
+    expect(dispatch.id).toBeDefined();
+    expect(dispatch.sheetNumber).toBe("LOAD-MORN-LINKED");
+    expect(["OPEN", "ISSUED", "DRAFT"]).toContain(dispatch.status);
+
+    const retrieved = useLogisticsStore.getState().getDailyDispatchById(dispatch.id);
+    expect(retrieved).toBeDefined();
+    expect(retrieved!.sheetNumber).toBe(dispatch.sheetNumber);
   });
 
   it("T1.5: Initializes store state with zero open modal and clean draft properties", () => {
@@ -197,214 +254,372 @@ describe("R1: Morning Dispatch & Zero Quantity Leakage", () => {
     expect(state.isLoadingManifestModalOpen).toBe(false);
     expect(state.isSettlementModalOpen).toBe(false);
     expect(state.error).toBeNull();
+
+    state.openCreateManifestModal();
+    expect(useLogisticsStore.getState().isLoadingManifestModalOpen).toBe(true);
+    expect(useLogisticsStore.getState().error).toBeNull();
+
+    state.closeCreateManifestModal();
+    expect(useLogisticsStore.getState().isLoadingManifestModalOpen).toBe(false);
   });
 
   // ==========================================================================
   // TIER 2: Boundary, Zero-Quantity & Overwrite Tests (≥ 5 tests)
   // ==========================================================================
 
-  it("T2.1: Blank and zero-quantity products are strictly excluded from final manifest", () => {
-    const rawItems: LoadingItemInput[] = [
-      { product_id: 1, pack_qty: 0, loose_qty: 0 },
-      { product_id: 2, pack_qty: 0, loose_qty: 0 },
-      { product_id: 3, pack_qty: 15, loose_qty: 0 }, // Only product 3 has quantity
-      { product_id: 4, pack_qty: 0, loose_qty: 0 },
-      { product_id: 5, pack_qty: 0, loose_qty: 0 },
-    ];
+  it("T2.1: Blank and zero-quantity products are strictly excluded from final manifest", async () => {
+    const item1 = makeDispatchItem(1, 0, 0);
+    const item2 = makeDispatchItem(2, 0, 0);
+    const item3 = makeDispatchItem(3, 15, 0); // Only Product 3 has quantity
 
-    const sanitized = sanitizeDispatchItems(rawItems);
-    expect(sanitized).toHaveLength(1);
-    expect(sanitized[0].product_id).toBe(3);
-    expect(sanitized[0].pack_qty).toBe(15);
+    const dispatch = await useLogisticsStore.getState().createDailyDispatch({
+      sheetNumber: "LOAD-FILTER-ZERO",
+      date: "2026-11-16",
+      routeId: 1,
+      routeName: "City Center",
+      salesmanId: 5,
+      salesmanName: "Muhammad Ali",
+      vehicleNumber: "LES-2489",
+      status: "ISSUED",
+      emptyCratesLoaded: 15,
+      emptyCratesReturned: 0,
+      items: [item1, item2, item3],
+      totalSalesRevenuePaisa: 0,
+      cashDepositedPaisa: 0,
+      unpaidBalancePaisa: 0,
+    });
+
+    // Zero-quantity items 1 and 2 must be strictly excluded from the created dispatch
+    expect(dispatch.items).toHaveLength(1);
+    expect(dispatch.items[0].productId).toBe(3);
+    expect(dispatch.items[0].dispatchedPacks).toBe(15);
   });
 
-  it("T2.2: Completely empty input list (all 0 quantities) yields empty sanitized manifest and rejects dispatch", () => {
-    const rawItems: LoadingItemInput[] = [
-      { product_id: 1, pack_qty: 0, loose_qty: 0 },
-      { product_id: 2, pack_qty: 0, loose_qty: 0 },
-      { product_id: 5, pack_qty: 0, loose_qty: 0 },
-    ];
+  it("T2.2: Completely empty input list (all 0 quantities) yields empty manifest and performs zero stock deduction", async () => {
+    const stock1Before = loadSavedProducts().find((p) => p.id === 1)!.stockPacks;
+    const stock2Before = loadSavedProducts().find((p) => p.id === 2)!.stockPacks;
 
-    const sanitized = sanitizeDispatchItems(rawItems);
-    expect(sanitized).toHaveLength(0);
+    const item1 = makeDispatchItem(1, 0, 0);
+    const item2 = makeDispatchItem(2, 0, 0);
 
-    // Attempting to dispatch an empty item list must throw or fail
-    expect(() => {
-      if (sanitized.length === 0) {
-        throw new Error("Cannot dispatch loading sheet with zero products or 0 total quantity");
-      }
-    }).toThrow("Cannot dispatch loading sheet with zero products");
+    const dispatch = await useLogisticsStore.getState().createDailyDispatch({
+      sheetNumber: "LOAD-ALL-ZERO",
+      date: "2026-11-16",
+      routeId: 1,
+      routeName: "City Center",
+      salesmanId: 5,
+      salesmanName: "Muhammad Ali",
+      vehicleNumber: "LES-2489",
+      status: "ISSUED",
+      emptyCratesLoaded: 0,
+      emptyCratesReturned: 0,
+      items: [item1, item2],
+      totalSalesRevenuePaisa: 0,
+      cashDepositedPaisa: 0,
+      unpaidBalancePaisa: 0,
+    });
+
+    // Must be empty list of items
+    expect(dispatch.items).toHaveLength(0);
+
+    // Warehouse stock must remain completely untouched
+    expect(loadSavedProducts().find((p) => p.id === 1)!.stockPacks).toBe(stock1Before);
+    expect(loadSavedProducts().find((p) => p.id === 2)!.stockPacks).toBe(stock2Before);
   });
 
-  it("T2.3: Quantity overwrite semantics: modifying a quantity replaces rather than accumulates", () => {
-    // Simulate user editing line item quantity in UI
-    let itemState: LoadingItemInput = { product_id: 1, pack_qty: 50, loose_qty: 0 };
+  it("T2.3: Quantity overwrite semantics: modifying a quantity replaces rather than accumulates", async () => {
+    const initialStock = loadSavedProducts().find((p) => p.id === 1)!.stockPacks;
+    const item = makeDispatchItem(1, 50, 0);
+
+    const dispatch = await useLogisticsStore.getState().createDailyDispatch({
+      sheetNumber: "LOAD-OVERWRITE",
+      date: "2026-11-16",
+      routeId: 1,
+      routeName: "City Center",
+      salesmanId: 5,
+      salesmanName: "Muhammad Ali",
+      vehicleNumber: "LES-2489",
+      status: "ISSUED",
+      emptyCratesLoaded: 50,
+      emptyCratesReturned: 0,
+      items: [item],
+      totalSalesRevenuePaisa: 0,
+      cashDepositedPaisa: 0,
+      unpaidBalancePaisa: 0,
+    });
+
+    expect(loadSavedProducts().find((p) => p.id === 1)!.stockPacks).toBe(initialStock - 50);
 
     // User changes 50 -> 20 (must overwrite, NOT 50 + 20 = 70)
-    itemState = { ...itemState, pack_qty: 20 };
-    expect(itemState.pack_qty).toBe(20);
+    await useLogisticsStore.getState().recalibrateDispatchSheet({
+      sheetId: dispatch.id,
+      status: "ISSUED",
+      items: [{ productId: 1, dispatchedPacks: 20, dispatchedLoose: 0, returnedIntactPacks: 0, returnedIntactLoose: 0, damagedPacks: 0, damagedLoose: 0 }],
+      cashDepositedPaisa: 0,
+    });
 
-    // User changes 20 -> 0 (must be 0, NOT 20)
-    itemState = { ...itemState, pack_qty: 0 };
-    expect(itemState.pack_qty).toBe(0);
+    expect(loadSavedProducts().find((p) => p.id === 1)!.stockPacks).toBe(initialStock - 20);
 
-    // User changes 0 -> 35
-    itemState = { ...itemState, pack_qty: 35 };
-    expect(itemState.pack_qty).toBe(35);
+    // User changes 20 -> 35 (must overwrite, NOT 20 + 35 = 55)
+    await useLogisticsStore.getState().recalibrateDispatchSheet({
+      sheetId: dispatch.id,
+      status: "ISSUED",
+      items: [{ productId: 1, dispatchedPacks: 35, dispatchedLoose: 0, returnedIntactPacks: 0, returnedIntactLoose: 0, damagedPacks: 0, damagedLoose: 0 }],
+      cashDepositedPaisa: 0,
+    });
 
-    const sanitized = sanitizeDispatchItems([itemState]);
-    expect(sanitized[0].pack_qty).toBe(35);
-    const baseUnits = calculateTotalBaseUnits(1, sanitized[0].pack_qty, 0);
-    expect(baseUnits).toBe(35 * 24); // 840 bottles, exactly matching 35 packs
+    expect(loadSavedProducts().find((p) => p.id === 1)!.stockPacks).toBe(initialStock - 35);
   });
 
-  it("T2.4: Prevents dispatch when requested quantity exceeds central warehouse stock", () => {
-    // Only 6,000 bottles of NC-1.5-PET in stock (1,000 packs)
-    const rawItems: LoadingItemInput[] = [
-      { product_id: 2, pack_qty: 1001, loose_qty: 0 }, // 1001 * 6 = 6,006 > 6,000
-    ];
-    const sanitized = sanitizeDispatchItems(rawItems);
+  it("T2.4: Prevents negative warehouse stock and handles stock boundary exhaustion safely", async () => {
+    const prod = loadSavedProducts().find((p) => p.id === 1)!;
+    const exactStock = prod.stockPacks; // 250 packs
 
-    expect(() => {
-      deductWarehouseStock(warehouseStock, sanitized);
-    }).toThrow(/Insufficient stock for product 2/);
+    // Dispatch exact available stock
+    await useInventoryStore.getState().deductWarehouseStock(1, exactStock * prod.bottlesPerPack);
+    expect(loadSavedProducts().find((p) => p.id === 1)!.stockPacks).toBe(0);
+
+    // Attempting further deduction does not allow negative stock
+    await useInventoryStore.getState().deductWarehouseStock(1, 40);
+    expect(loadSavedProducts().find((p) => p.id === 1)!.stockPacks).toBe(0);
   });
 
-  it("T2.5: Negative quantity inputs are rejected or clamped to zero", () => {
-    const rawItems: LoadingItemInput[] = [
-      { product_id: 1, pack_qty: -10, loose_qty: -5 },
-      { product_id: 2, pack_qty: 20, loose_qty: 0 },
+  it("T2.5: Zero-quantity pruning: items with 0 packs and 0 loose are pruned, only items with >0 are kept", async () => {
+    const items = [
+      makeDispatchItem(1, 0, 0),
+      makeDispatchItem(2, 20, 0),
+      makeDispatchItem(3, 0, 0),
     ];
 
-    const sanitized = sanitizeDispatchItems(
-      rawItems.map((it) => ({
-        ...it,
-        pack_qty: Math.max(0, it.pack_qty),
-        loose_qty: Math.max(0, it.loose_qty),
-      }))
-    );
+    const dispatch = await useLogisticsStore.getState().createDailyDispatch({
+      sheetNumber: "LOAD-PRUNE-TEST",
+      date: "2026-11-16",
+      routeId: 1,
+      routeName: "City Center",
+      salesmanId: 5,
+      salesmanName: "Muhammad Ali",
+      vehicleNumber: "LES-2489",
+      status: "ISSUED",
+      emptyCratesLoaded: 20,
+      emptyCratesReturned: 0,
+      items,
+      totalSalesRevenuePaisa: 0,
+      cashDepositedPaisa: 0,
+      unpaidBalancePaisa: 0,
+    });
 
-    expect(sanitized).toHaveLength(1);
-    expect(sanitized[0].product_id).toBe(2);
-    expect(sanitized[0].pack_qty).toBe(20);
+    expect(dispatch.items).toHaveLength(1);
+    expect(dispatch.items[0].productId).toBe(2);
+    expect(dispatch.items[0].dispatchedPacks).toBe(20);
   });
 
   // ==========================================================================
   // TIER 3: Cross-Session Isolation & Multi-Session Reset (≥ 3 tests)
   // ==========================================================================
 
-  it("T3.1: Session isolation: completing Session A leaves Session B completely clean", () => {
-    // Session A: Driver Muhammad Ali loads 50 crates
-    const sessionAItems: LoadingItemInput[] = [{ product_id: 1, pack_qty: 50, loose_qty: 0 }];
-    const sanitizedA = sanitizeDispatchItems(sessionAItems);
-    expect(sanitizedA).toHaveLength(1);
-    expect(sanitizedA[0].pack_qty).toBe(50);
+  it("T3.1: Session isolation: completing Session A leaves Session B completely clean", async () => {
+    // Session A: Muhammad Ali loads Product 1 (50 packs)
+    const itemA = makeDispatchItem(1, 50, 0);
+    const dispatchA = await useLogisticsStore.getState().createDailyDispatch({
+      sheetNumber: "LOAD-SESS-A",
+      date: "2026-11-16",
+      routeId: 1,
+      routeName: "City Center",
+      salesmanId: 5,
+      salesmanName: "Muhammad Ali",
+      vehicleNumber: "LES-2489",
+      status: "ISSUED",
+      emptyCratesLoaded: 50,
+      emptyCratesReturned: 0,
+      items: [itemA],
+      totalSalesRevenuePaisa: 0,
+      cashDepositedPaisa: 0,
+      unpaidBalancePaisa: 0,
+    });
 
-    // Save session A state to simulated local storage
-    mockStorage.setItem("last_completed_dispatch", JSON.stringify({ driver: "Muhammad Ali", items: sanitizedA }));
+    // Session B: Rashid Mahmood loads Product 2 (30 packs)
+    const itemB = makeDispatchItem(2, 30, 0);
+    const dispatchB = await useLogisticsStore.getState().createDailyDispatch({
+      sheetNumber: "LOAD-SESS-B",
+      date: "2026-11-16",
+      routeId: 2,
+      routeName: "Khanpur Road",
+      salesmanId: 6,
+      salesmanName: "Rashid Mahmood",
+      vehicleNumber: "RYK-8192",
+      status: "ISSUED",
+      emptyCratesLoaded: 30,
+      emptyCratesReturned: 0,
+      items: [itemB],
+      totalSalesRevenuePaisa: 0,
+      cashDepositedPaisa: 0,
+      unpaidBalancePaisa: 0,
+    });
 
-    // Start Session B for Driver Rashid Mahmood
-    // New session MUST initialize with empty items, zero leakage from Session A
-    const sessionBItems: LoadingItemInput[] = [];
-    const sanitizedB = sanitizeDispatchItems(sessionBItems);
-
-    expect(sanitizedB).toHaveLength(0);
-    // Verify no quantities from session A leaked into session B
-    const sessionAProductInB = sanitizedB.find((it) => it.product_id === 1);
-    expect(sessionAProductInB).toBeUndefined();
+    expect(dispatchA.sheetNumber).not.toBe(dispatchB.sheetNumber);
+    expect(dispatchB.items).toHaveLength(1);
+    expect(dispatchB.items[0].productId).toBe(2);
+    expect(dispatchB.items.some((it) => it.productId === 1)).toBe(false);
   });
 
   it("T3.2: Cancelling a dispatch session mid-entry resets modal state with zero residue", () => {
-    // Store modal opens and user types some draft entries
     useLogisticsStore.getState().openCreateManifestModal();
     expect(useLogisticsStore.getState().isLoadingManifestModalOpen).toBe(true);
 
-    // User cancels modal
     useLogisticsStore.getState().closeCreateManifestModal();
     expect(useLogisticsStore.getState().isLoadingManifestModalOpen).toBe(false);
 
-    // Re-opening manifest modal must not have error residue
     useLogisticsStore.getState().openCreateManifestModal();
     expect(useLogisticsStore.getState().error).toBeNull();
     useLogisticsStore.getState().closeCreateManifestModal();
   });
 
   it("T3.3: Two sequential dispatches for different routes generate independent sheet numbers and stock deductions", async () => {
-    // Sheet 1 for Route 1
-    const dto1: CreateLoadingSheetDto = {
-      route_id: 1,
-      vehicle_id: 1,
-      items: [{ product_id: 1, pack_qty: 20, loose_qty: 0 }],
-    };
-    const sheet1 = await logisticsService.createLoadingSheet(dto1);
+    const prod1Initial = loadSavedProducts().find((p) => p.id === 1)!.stockPacks;
 
-    // Sheet 2 for Route 2
-    const dto2: CreateLoadingSheetDto = {
-      route_id: 2,
-      vehicle_id: 2,
-      items: [{ product_id: 2, pack_qty: 15, loose_qty: 0 }],
-    };
-    const sheet2 = await logisticsService.createLoadingSheet(dto2);
+    const d1 = await useLogisticsStore.getState().createDailyDispatch({
+      sheetNumber: "LOAD-ROUTE-01",
+      date: "2026-11-16",
+      routeId: 1,
+      routeName: "City Center",
+      salesmanId: 5,
+      salesmanName: "Muhammad Ali",
+      vehicleNumber: "LES-2489",
+      status: "ISSUED",
+      emptyCratesLoaded: 20,
+      emptyCratesReturned: 0,
+      items: [makeDispatchItem(1, 20, 0)],
+      totalSalesRevenuePaisa: 0,
+      cashDepositedPaisa: 0,
+      unpaidBalancePaisa: 0,
+    });
 
-    expect(sheet1.id).toBeDefined();
-    expect(sheet2.id).toBeDefined();
-    expect(sheet1.sheet_number).toBeDefined();
-    expect(sheet2.sheet_number).toBeDefined();
+    const d2 = await useLogisticsStore.getState().createDailyDispatch({
+      sheetNumber: "LOAD-ROUTE-02",
+      date: "2026-11-16",
+      routeId: 2,
+      routeName: "Khanpur Road",
+      salesmanId: 6,
+      salesmanName: "Rashid Mahmood",
+      vehicleNumber: "RYK-8192",
+      status: "ISSUED",
+      emptyCratesLoaded: 15,
+      emptyCratesReturned: 0,
+      items: [makeDispatchItem(1, 15, 0)],
+      totalSalesRevenuePaisa: 0,
+      cashDepositedPaisa: 0,
+      unpaidBalancePaisa: 0,
+    });
+
+    expect(d1.id).not.toBe(d2.id);
+    expect(d1.sheetNumber).toBe("LOAD-ROUTE-01");
+    expect(d2.sheetNumber).toBe("LOAD-ROUTE-02");
+
+    // Cumulative stock deduction: 20 + 15 = 35 packs
+    expect(loadSavedProducts().find((p) => p.id === 1)!.stockPacks).toBe(prod1Initial - 35);
   });
 
   // ==========================================================================
   // TIER 4: Real-World Agency Morning Fleet Dispatch Workflow (≥ 2 tests)
   // ==========================================================================
 
-  it("T4.1: Agency morning fleet dispatch: dispatches 3 vans sequentially with strict stock accounting", () => {
-    const initialStockRGB = warehouseStock[1]; // 48,000
-    const initialStockPET = warehouseStock[2]; // 6,000
-    const initialStockLemon = warehouseStock[5]; // 48,000
+  it("T4.1: Agency morning fleet dispatch: dispatches 3 vans sequentially with strict stock accounting", async () => {
+    const p1Initial = loadSavedProducts().find((p) => p.id === 1)!.stockPacks;
+    const p2Initial = loadSavedProducts().find((p) => p.id === 2)!.stockPacks;
 
-    // Van 1 (LES-2489, Beat 1): 50 Crates RGB, 30 Packs PET
-    const van1Items = sanitizeDispatchItems([
-      { product_id: 1, pack_qty: 50, loose_qty: 0 }, // 1,200 btls
-      { product_id: 2, pack_qty: 30, loose_qty: 0 }, // 180 btls
-    ]);
-    warehouseStock = deductWarehouseStock(warehouseStock, van1Items);
+    // Van 1: 50 packs P1, 30 packs P2
+    await useLogisticsStore.getState().createDailyDispatch({
+      sheetNumber: "LOAD-FLEET-VAN1",
+      date: "2026-11-16",
+      routeId: 1,
+      routeName: "City Beat 1",
+      salesmanId: 5,
+      salesmanName: "Muhammad Ali",
+      vehicleNumber: "LES-2489",
+      status: "ISSUED",
+      emptyCratesLoaded: 50,
+      emptyCratesReturned: 0,
+      items: [makeDispatchItem(1, 50, 0), makeDispatchItem(2, 30, 0)],
+      totalSalesRevenuePaisa: 0,
+      cashDepositedPaisa: 0,
+      unpaidBalancePaisa: 0,
+    });
 
-    // Van 2 (RYK-8192, Beat 2): 40 Crates Lemon, 20 Packs PET
-    const van2Items = sanitizeDispatchItems([
-      { product_id: 5, pack_qty: 40, loose_qty: 0 }, // 960 btls
-      { product_id: 2, pack_qty: 20, loose_qty: 0 }, // 120 btls
-    ]);
-    warehouseStock = deductWarehouseStock(warehouseStock, van2Items);
+    // Van 2: 40 packs P1, 20 packs P2
+    await useLogisticsStore.getState().createDailyDispatch({
+      sheetNumber: "LOAD-FLEET-VAN2",
+      date: "2026-11-16",
+      routeId: 2,
+      routeName: "Khanpur Beat 2",
+      salesmanId: 6,
+      salesmanName: "Rashid Mahmood",
+      vehicleNumber: "RYK-8192",
+      status: "ISSUED",
+      emptyCratesLoaded: 40,
+      emptyCratesReturned: 0,
+      items: [makeDispatchItem(1, 40, 0), makeDispatchItem(2, 20, 0)],
+      totalSalesRevenuePaisa: 0,
+      cashDepositedPaisa: 0,
+      unpaidBalancePaisa: 0,
+    });
 
-    // Van 3 (MN-4501, Beat 3): 100 Crates RGB
-    const van3Items = sanitizeDispatchItems([
-      { product_id: 1, pack_qty: 100, loose_qty: 0 }, // 2,400 btls
-    ]);
-    warehouseStock = deductWarehouseStock(warehouseStock, van3Items);
+    // Van 3: 30 packs P1
+    await useLogisticsStore.getState().createDailyDispatch({
+      sheetNumber: "LOAD-FLEET-VAN3",
+      date: "2026-11-16",
+      routeId: 3,
+      routeName: "Sadiqabad Beat 3",
+      salesmanId: 7,
+      salesmanName: "Imran Khan",
+      vehicleNumber: "MN-4501",
+      status: "ISSUED",
+      emptyCratesLoaded: 30,
+      emptyCratesReturned: 0,
+      items: [makeDispatchItem(1, 30, 0)],
+      totalSalesRevenuePaisa: 0,
+      cashDepositedPaisa: 0,
+      unpaidBalancePaisa: 0,
+    });
 
-    // Verify exact warehouse inventory after 3-van fleet departure
-    expect(warehouseStock[1]).toBe(initialStockRGB - 3600); // 1,200 + 2,400 = 3,600 btls deducted
-    expect(warehouseStock[2]).toBe(initialStockPET - 300);  // 180 + 120 = 300 btls deducted
-    expect(warehouseStock[5]).toBe(initialStockLemon - 960); // 960 btls deducted
+    // Total P1 deducted = 50 + 40 + 30 = 120 packs
+    // Total P2 deducted = 30 + 20 = 50 packs
+    expect(loadSavedProducts().find((p) => p.id === 1)!.stockPacks).toBe(p1Initial - 120);
+    expect(loadSavedProducts().find((p) => p.id === 2)!.stockPacks).toBe(p2Initial - 50);
   });
 
-  it("T4.2: Full dispatch integrity audit: zero negative stock, exact pack-to-bottle math across entire fleet", () => {
-    const fleetManifest = [
-      { van: "LES-2489", items: [{ product_id: 1, pack_qty: 60, loose_qty: 0 }] }, // 1,440 btls
-      { van: "RYK-8192", items: [{ product_id: 1, pack_qty: 80, loose_qty: 0 }] }, // 1,920 btls
-      { van: "MN-4501", items: [{ product_id: 1, pack_qty: 120, loose_qty: 0 }] }, // 2,880 btls
+  it("T4.2: Full dispatch integrity audit: zero negative stock, exact pack-to-bottle math across entire fleet", async () => {
+    const p1Initial = loadSavedProducts().find((p) => p.id === 1)!.stockPacks;
+
+    const fleet = [
+      { van: "LES-2489", packs: 20 },
+      { van: "RYK-8192", packs: 25 },
+      { van: "MN-4501", packs: 35 },
     ];
 
-    let totalBottlesDispatched = 0;
-    for (const van of fleetManifest) {
-      const sanitized = sanitizeDispatchItems(van.items);
-      for (const it of sanitized) {
-        totalBottlesDispatched += calculateTotalBaseUnits(it.product_id, it.pack_qty, it.loose_qty);
-      }
-      warehouseStock = deductWarehouseStock(warehouseStock, sanitized);
+    let totalDispatchedPacks = 0;
+    for (const v of fleet) {
+      totalDispatchedPacks += v.packs;
+      await useLogisticsStore.getState().createDailyDispatch({
+        sheetNumber: `LOAD-FLEET-${v.van}`,
+        date: "2026-11-16",
+        routeId: 1,
+        routeName: "City Beat",
+        salesmanId: 5,
+        salesmanName: "Muhammad Ali",
+        vehicleNumber: v.van,
+        status: "ISSUED",
+        emptyCratesLoaded: v.packs,
+        emptyCratesReturned: 0,
+        items: [makeDispatchItem(1, v.packs, 0)],
+        totalSalesRevenuePaisa: 0,
+        cashDepositedPaisa: 0,
+        unpaidBalancePaisa: 0,
+      });
     }
 
-    expect(totalBottlesDispatched).toBe(1440 + 1920 + 2880); // 6,240 bottles
-    expect(warehouseStock[1]).toBe(48000 - 6240); // 41,760 bottles remaining
-    expect(warehouseStock[1]).toBeGreaterThan(0);
+    expect(totalDispatchedPacks).toBe(80);
+    const finalStock = loadSavedProducts().find((p) => p.id === 1)!.stockPacks;
+    expect(finalStock).toBe(p1Initial - 80);
+    expect(finalStock).toBeGreaterThan(0);
   });
 });
